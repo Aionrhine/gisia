@@ -33,9 +33,11 @@ module Routable
     route = Route.find_by(path: path.to_s)
 
     return unless route
-    return route.source unless route_scope
 
-    route_scope.find_by(id: route.source_id)
+    source = route.source
+    return source unless route_scope
+
+    source if source.is_a?(route_scope.klass)
   end
 
   class_methods do
@@ -54,6 +56,10 @@ module Routable
         follow_redirects: follow_redirects,
         route_scope: route_scope
       )
+    end
+
+    def find_by_full_path!(path, follow_redirects: false)
+      find_by_full_path(path, follow_redirects: follow_redirects) || raise(ActiveRecord::RecordNotFound)
     end
   end
 
