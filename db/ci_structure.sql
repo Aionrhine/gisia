@@ -2764,7 +2764,9 @@ CREATE TABLE public.users (
     composite_identity_enforced boolean DEFAULT false NOT NULL,
     state integer DEFAULT 0 NOT NULL,
     password_automatically_set boolean DEFAULT false,
-    password_expires_at timestamp(6) without time zone
+    password_expires_at timestamp(6) without time zone,
+    timezone character varying,
+    preferred_language character varying DEFAULT 'en'::character varying NOT NULL
 );
 
 
@@ -5188,7 +5190,7 @@ CREATE INDEX index_merge_request_diffs_on_head_commit_sha ON public.merge_reques
 -- Name: index_merge_request_diffs_on_merge_request_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_merge_request_diffs_on_merge_request_id ON public.merge_request_diffs USING btree (merge_request_id);
+CREATE INDEX index_merge_request_diffs_on_merge_request_id ON public.merge_request_diffs USING btree (merge_request_id);
 
 
 --
@@ -5196,6 +5198,13 @@ CREATE UNIQUE INDEX index_merge_request_diffs_on_merge_request_id ON public.merg
 --
 
 CREATE INDEX index_merge_request_diffs_on_project_id ON public.merge_request_diffs USING btree (project_id);
+
+
+--
+-- Name: index_merge_request_diffs_on_unique_merge_request_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_merge_request_diffs_on_unique_merge_request_id ON public.merge_request_diffs USING btree (merge_request_id) WHERE (diff_type = 2);
 
 
 --
@@ -6345,6 +6354,10 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260313154116'),
+('20260313133856'),
+('20260313082820'),
+('20260312151247'),
 ('20260303033611'),
 ('20260219093655'),
 ('20260217142228'),
