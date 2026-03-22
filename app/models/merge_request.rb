@@ -15,6 +15,7 @@ class MergeRequest < ApplicationRecord
   include MergeRequests::MergeStatus
   include Issuable
   include Noteable
+  include Participable
 
   include Diffable
   include HasDescription
@@ -23,6 +24,7 @@ class MergeRequest < ApplicationRecord
   include MergeRequests::ReloadDiffs
   include MergeRequests::Pipelines
   include MergeRequests::Variables
+  include IidRoutes
 
   MERGE_LEASE_TIMEOUT = 15.minutes.to_i
 

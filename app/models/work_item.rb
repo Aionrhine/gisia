@@ -13,12 +13,14 @@ class WorkItem < ApplicationRecord
   include AtomicInternalId
   include Noteable
   include Issuable
+  include Participable
   include Referable
   include WorkItems::HasState
   include WorkItems::HasWorkflows
   include WorkItems::HasLabels
   include WorkItems::HasParent
   include HasDescription
+  include IidRoutes
 
   belongs_to :author, class_name: 'User'
   belongs_to :updated_by, class_name: 'User', optional: true
@@ -27,6 +29,11 @@ class WorkItem < ApplicationRecord
   has_one :project, through: :namespace
   has_many :work_item_assignees, dependent: :destroy
   has_many :assignees, class_name: 'User', through: :work_item_assignees
+
+  def assignee_ids=(ids)
+    @previous_assignee_ids ||= work_item_assignees.pluck(:assignee_id).sort if persisted?
+    super
+  end
   has_many :label_links, as: :labelable, dependent: :destroy
   has_many :labels, through: :label_links
 
@@ -61,6 +68,10 @@ class WorkItem < ApplicationRecord
 
   def self.ransackable_associations(_auth_object = nil)
     %w[author updated_by closed_by namespace labels assignees]
+  end
+
+  def custom_notification_target_name
+    'work_item'
   end
 
   def clear_closure_reason_references; end
