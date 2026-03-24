@@ -1,0 +1,11 @@
+json.id group.namespace.id
+json.name group.name
+json.path group.path
+json.kind group.namespace.kind
+json.full_path group.namespace.full_path
+json.parent_id group.namespace.parent_id
+json.description group.description
+json.visibility group.visibility
+json.web_url "#{Gitlab.config.gitlab.url}/#{group.namespace.full_path}"
+json.created_at group.created_at
+json.updated_at group.updated_at

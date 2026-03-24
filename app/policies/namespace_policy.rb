@@ -9,17 +9,9 @@
 # Licensed under AGPLv3 - see LICENSE file in this repository
 # ======================================================
 
-resources :merge_requests, except: [:destroy], param: :iid, constraints: { iid: /\d+/ } do
-  collection do
-    get :search_users
-  end
-  member do
-    get :show
-    get :commits
-    get :diffs
-    get :pipelines
-    post :merge
-  end
+class NamespacePolicy < BasePolicy
+  condition(:own_namespace) { @user.present? && @subject.owner == @user }
 
-  resources :diff_notes, only: [:create]
+  rule { admin | own_namespace }.enable :admin_namespace
 end
+
