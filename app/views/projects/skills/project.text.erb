@@ -28,6 +28,9 @@ curl <%= Gitlab.config.gitlab.url %>/api/v4/... \
 | Branches | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/branches/skill.md` |
 | Tags | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/tags/skill.md` |
 | Merge Requests | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/merge_requests/skill.md` |
+| Pipelines | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/pipelines/skill.md` |
+| Jobs | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/jobs/skill.md` |
+| Members | `<%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/members/skill.md` |
 
 **Save all skill files locally:**
 
@@ -43,6 +46,9 @@ curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/labels/skill
 curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/branches/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/branches.md
 curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/tags/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/tags.md
 curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/merge_requests/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/merge_requests.md
+curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/pipelines/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/pipelines.md
+curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/jobs/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/jobs.md
+curl -s <%= Gitlab.config.gitlab.url %>/<%= @project.full_path %>/-/members/skill.md -H "PRIVATE-TOKEN: YOUR_PERSONAL_ACCESS_TOKEN" > ~/.gisiabot/skills/<%= @project.full_path.gsub('/', '-') %>/members.md
 ```
 
 ---
@@ -62,6 +68,9 @@ Each skill file served by Gisia can be overridden per-project by committing a re
 | Branches | `.gisiabot/skills/branches.md` |
 | Tags | `.gisiabot/skills/tags.md` |
 | Merge Requests | `.gisiabot/skills/merge_requests.md` |
+| Pipelines | `.gisiabot/skills/pipelines.md` |
+| Jobs | `.gisiabot/skills/jobs.md` |
+| Members | `.gisiabot/skills/members.md` |
 
 **Example — override the issues skill:**
 
