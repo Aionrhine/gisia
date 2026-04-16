@@ -21,6 +21,8 @@ class Note < ApplicationRecord
 
   belongs_to :namespace
   belongs_to :noteable, polymorphic: true
+
+  has_one :activity, foreign_key: :note_id, dependent: :destroy
   belongs_to :author, class_name: 'User'
   belongs_to :updated_by, class_name: 'User', optional: true
   belongs_to :resolved_by, class_name: 'User', optional: true
@@ -31,6 +33,7 @@ class Note < ApplicationRecord
   validates :noteable_id, presence: true
 
   before_validation :convert_note_to_html
+  after_create_commit :create_note_activity
 
   scope :new_diff_notes, -> { where(type: 'DiffNote') }
   scope :system, -> { where(system: true) }
@@ -133,5 +136,19 @@ class Note < ApplicationRecord
     return unless note_changed? && note.present?
 
     self.note_html = Banzai::Renderer.render(note)
+  end
+
+  def create_note_activity
+    return unless root_note?
+    return unless %w[Issue MergeRequest Epic].include?(noteable_type)
+
+    Activity.partition_model_for(noteable_type).create!(
+      trackable_type: noteable_type,
+      trackable_id: noteable_id,
+      author_id: author_id,
+      action_type: :note_added,
+      note_id: id,
+      created_at: created_at
+    )
   end
 end
