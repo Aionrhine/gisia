@@ -14,10 +14,22 @@ module Projects
     :protected_branches
   end
 
+  def protected_ref_row_partial
+    'projects/settings/protected_refs/protected_branch_row'
+  end
+
+  def protected_ref_edit_row_partial
+    'projects/settings/protected_refs/protected_branch_edit_row'
+  end
+
   def render_turbo_stream_response
-    render turbo_stream: turbo_stream.replace('protected_branches_content',
-      partial: 'projects/settings/protected_refs/protected_branches_content',
-      locals: { project: @project })
+    status = @protected_ref&.errors&.any? ? :unprocessable_entity : :ok
+    render turbo_stream: [
+      turbo_stream.replace('flash', partial: 'shared/flash'),
+      turbo_stream.replace('protected_branches_content',
+        partial: 'projects/settings/protected_refs/protected_branches_content',
+        locals: { project: @project })
+    ], status: status
   end
 
   def protected_ref_params
