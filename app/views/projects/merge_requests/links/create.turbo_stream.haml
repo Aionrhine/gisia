@@ -1,0 +1,5 @@
+= turbo_stream.replace 'flash' do
+  %div#flash{ class: 'fixed top-0 left-64 right-0 z-21' }
+
+= turbo_stream.append 'linked-items-list' do
+  = render 'shared/item_links/linked_item', item_link: @item_link
