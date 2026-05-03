@@ -24,6 +24,7 @@ class Project < ApplicationRecord
   include Projects::MergeRequests
   include Projects::HasProtectedRefs
   include Projects::HasBoard
+  include WithUploads
 
   belongs_to :namespace, autosave: true, class_name: 'Namespaces::ProjectNamespace',
     foreign_key: 'namespace_id', inverse_of: :project, dependent: :destroy
@@ -174,6 +175,10 @@ class Project < ApplicationRecord
     raise ArgumentError, _('Invalid feature') unless HASHED_STORAGE_FEATURES.include?(feature)
 
     storage_version && storage_version >= HASHED_STORAGE_FEATURES[feature]
+  end
+
+  def uploads_sharding_key
+    { project_id: id }
   end
 
   def storage
@@ -573,6 +578,16 @@ class Project < ApplicationRecord
   end
 
   def external_authorization_classification_label; end
+
+  # Todo,
+  def releases
+    @null_releases ||= Object.new.tap { |o| o.define_singleton_method(:find_by_tag) { |_| nil } }
+  end
+
+  # Todo, mv to settings
+  def enforce_auth_checks_on_uploads?
+    true
+  end
 
   def self_or_ancestors_archived?
     # We can remove `archived?` once we move the project archival to the `namespaces.archived` column
