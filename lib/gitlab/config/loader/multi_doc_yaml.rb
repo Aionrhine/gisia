@@ -14,11 +14,12 @@ module Gitlab
 
         MULTI_DOC_DIVIDER = /^---\s+/
 
-        def initialize(config, max_documents:, additional_permitted_classes: [], reject_empty: false)
+        def initialize(config, max_documents:, additional_permitted_classes: [], reject_empty: false, filename: nil)
           @config = config
           @max_documents = max_documents
           @additional_permitted_classes = additional_permitted_classes
           @reject_empty = reject_empty
+          @filename = filename
         end
 
         def valid?
@@ -35,7 +36,7 @@ module Gitlab
 
         private
 
-        attr_reader :config, :max_documents, :additional_permitted_classes, :reject_empty
+        attr_reader :config, :max_documents, :additional_permitted_classes, :reject_empty, :filename
 
         # Valid YAML files can start with either a leading delimiter or no delimiter.
         # To avoid counting a leading delimiter towards the document limit,
@@ -44,7 +45,10 @@ module Gitlab
         def documents
           docs = config
                   .split(MULTI_DOC_DIVIDER, max_documents_including_leading_delimiter)
-                  .map { |d| Yaml.new(d, additional_permitted_classes: additional_permitted_classes) }
+                  .map do |d|
+            Yaml.new(d, additional_permitted_classes: additional_permitted_classes,
+              filename: filename)
+          end
 
           docs.shift if docs.first.blank?
           docs.reject!(&:blank?) if reject_empty

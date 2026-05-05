@@ -62,7 +62,7 @@ module Gitlab
         logger.log_timed(LOG_MESSAGES[:protected_branch_checks]) do
           return unless ProtectedBranch.protected?(project, branch_name) # rubocop:disable Cop/AvoidReturnFromBlocks
 
-          if forced_push? && !ProtectedBranch.allow_force_push?(project, branch_name)
+          if forced_push? && !allow_force_push?
             raise GitAccess::ForbiddenError, ERROR_MESSAGES[:force_push_protected_branch]
           end
         end
@@ -142,8 +142,7 @@ module Gitlab
       end
 
       def project_members_url
-        # Todo,
-        '#'
+        Gitlab::Routing.url_helpers.project_project_members_url(project)
       end
 
       def matching_merge_request?
@@ -154,9 +153,15 @@ module Gitlab
         Gitlab::Checks::ForcePush.force_push?(project, oldrev, newrev)
       end
 
+      def allow_force_push?
+        ProtectedBranch.allow_force_push?(project, branch_name)
+      end
+
       def safe_commit_for_new_protected_branch?
         ProtectedBranch.any_protected?(project, project.repository.branch_names_contains_sha(newrev))
       end
     end
   end
 end
+
+Gitlab::Checks::BranchCheck.prepend_mod

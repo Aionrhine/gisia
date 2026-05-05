@@ -10,11 +10,13 @@ module Gitlab
   module Auth
     AuthenticationError = Class.new(StandardError)
     MissingTokenError = Class.new(AuthenticationError)
+    InvalidTokenError = Class.new(AuthenticationError)
     TokenNotFoundError = Class.new(AuthenticationError)
     ExpiredError = Class.new(AuthenticationError)
     RevokedError = Class.new(AuthenticationError)
     ImpersonationDisabled = Class.new(AuthenticationError)
     UnauthorizedError = Class.new(AuthenticationError)
+    GranularPermissionsError = Class.new(AuthenticationError)
 
     class DpopValidationError < AuthenticationError
       def initialize(msg)
@@ -40,6 +42,7 @@ module Gitlab
       include Gitlab::Utils::StrongMemoize
       include ActionController::HttpAuthentication::Basic
       include ActionController::HttpAuthentication::Token
+      include Gitlab::RackLoadBalancingHelpers
 
       PRIVATE_TOKEN_HEADER = 'HTTP_PRIVATE_TOKEN'
       PRIVATE_TOKEN_PARAM = :private_token
@@ -48,7 +51,6 @@ module Gitlab
       DEPLOY_TOKEN_HEADER = 'HTTP_DEPLOY_TOKEN'
       RUNNER_TOKEN_PARAM = :token
       RUNNER_JOB_TOKEN_PARAM = :token
-      PATH_DEPENDENT_FEED_TOKEN_REGEX = /\A#{User::FEED_TOKEN_PREFIX}(\h{64})-(\d+)\z/
 
       PARAM_TOKEN_KEYS = [
         PRIVATE_TOKEN_PARAM,
@@ -61,7 +63,11 @@ module Gitlab
         DEPLOY_TOKEN_HEADER
       ].freeze
 
+      MAX_JOB_TOKEN_SIZE_BYTES = 8192
+
       attr_accessor :current_token
+
+      BEARER_PATTERN = /^Bearer /i
 
       # Check the Rails session for valid authentication details
       def find_user_from_warden
@@ -139,9 +145,10 @@ module Gitlab
 
         validate_and_save_access_token!(scopes: scopes)
 
-        ::PersonalAccessTokens::LastUsedService.new(access_token).execute
+        ::PersonalAccessTokens::LastUsedService.new(access_token).execute unless access_token.is_a?(::Authn::Tokens::IamOauthToken)
 
-        access_token.user || raise(UnauthorizedError)
+        user = access_token.user || raise(UnauthorizedError)
+        resolve_composite_identity_user(user)
       end
 
       def find_user_from_access_token
@@ -149,9 +156,10 @@ module Gitlab
 
         validate_and_save_access_token!
 
-        ::PersonalAccessTokens::LastUsedService.new(access_token).execute
+        ::PersonalAccessTokens::LastUsedService.new(access_token).execute unless access_token.is_a?(::Authn::Tokens::IamOauthToken)
 
-        access_token.user || raise(UnauthorizedError)
+        user = access_token.user || raise(UnauthorizedError)
+        resolve_composite_identity_user(user)
       end
 
       # This returns a deploy token, not a user since a deploy token does not
@@ -193,6 +201,17 @@ module Gitlab
         ::Ci::Runner.find_by_token(token.to_s) || raise(UnauthorizedError)
       end
 
+      def find_job_from_job_token
+        return unless api_request?
+
+        self.current_token = get_job_token_from_query_param_or_header
+        return unless current_token
+
+        validate_job_token_size!(current_token)
+
+        find_valid_running_job_by_token!(current_token)
+      end
+
       def validate_and_save_access_token!(scopes: [], save_auth_context: true, reset_token: false)
         # return early if we've already authenticated via a job token
         return if @current_authenticated_job.present? # rubocop:disable Gitlab/ModuleWithInstanceVariables
@@ -225,7 +244,9 @@ module Gitlab
           raise ImpersonationDisabled
         end
 
+        clear_auth_failure_in_application_context(save_auth_context)
         save_current_token_in_env
+        access_token
       end
 
       def authentication_token_present?
@@ -234,7 +255,21 @@ module Gitlab
           parsed_oauth_token.present?
       end
 
+      def self.path_dependent_feed_token_regex
+        /\A(#{User::FEED_TOKEN_PREFIX}|#{User.prefix_for_feed_token})(\h{64})-(\d+)\z/
+      end
+
       private
+
+      def resolve_composite_identity_user(user)
+        return user unless user&.composite_identity_enforced?
+
+        identity = ::Gitlab::Auth::Identity.currently_linked
+        raise UnauthorizedError unless identity
+
+        identity.scoped_user.composite_identity_enforced!
+        identity.scoped_user
+      end
 
       def extract_personal_access_token
         current_request.params[PRIVATE_TOKEN_PARAM].presence ||
@@ -242,11 +277,42 @@ module Gitlab
           parsed_oauth_token
       end
 
+      def current_auth_header_type
+        strong_memoize(:current_auth_header_type) do
+          if current_request.env[PRIVATE_TOKEN_HEADER].present?
+            'private_token_header'
+          elsif current_request.params[PRIVATE_TOKEN_PARAM].present?
+            'private_token_param'
+          elsif current_request.authorization&.match?(BEARER_PATTERN)
+            'bearer'
+          else
+            'other'
+          end
+        end
+      end
+
+      def request_token_type
+        strong_memoize(:request_token_type) do
+          token = extract_personal_access_token
+
+          next "" if token.nil?
+
+          if ::Authn::Tokens::PersonalAccessToken.prefix?(token)
+            'PersonalAccessToken'
+          elsif ::Authn::Tokens::CiJobToken.prefix?(token)
+            'CiJobToken'
+          else
+            'unknown'
+          end
+        end
+      end
+
       def save_current_token_in_env
         token_info = {
           token_id: access_token.id,
           token_type: access_token.class.to_s,
-          token_scopes: access_token.scopes.map(&:to_sym)
+          token_scopes: access_token.scopes.map(&:to_sym),
+          auth_header_type: current_auth_header_type
         }
 
         token_info[:token_application_id] = access_token.application_id if access_token.respond_to?(:application_id)
@@ -256,9 +322,30 @@ module Gitlab
 
       def save_auth_failure_in_application_context(access_token, cause, requested_scopes)
         Gitlab::ApplicationContext.push(
+          user: access_token.user,
           auth_fail_reason: cause.to_s,
           auth_fail_token_id: "#{access_token.class}/#{access_token.id}",
-          auth_fail_requested_scopes: requested_scopes.join(' ')
+          auth_fail_requested_scopes: requested_scopes.join(' '),
+          auth_fail_token_type: request_token_type,
+          auth_fail_auth_header_type: current_auth_header_type
+        )
+      end
+
+      def clear_auth_failure_in_application_context(save_auth_context)
+        return unless save_auth_context
+
+        # Use Labkit::Context.push directly to avoid triggering `to_lazy_hash`
+        # inside Gitlab::ApplicationContext.push. That path calls `include_client?`,
+        # which evaluates the existing client_id lambda and transitively the user
+        # lazy-attribute reader -- memoizing nil because @current_user hasn't been
+        # assigned yet (we are still inside its computation). Pushing at the Labkit
+        # level bypasses that evaluation entirely.
+        Labkit::Context.push(
+          auth_fail_reason: nil,
+          auth_fail_token_id: nil,
+          auth_fail_requested_scopes: nil,
+          auth_fail_token_type: nil,
+          auth_fail_auth_header_type: nil
         )
       end
 
@@ -273,7 +360,7 @@ module Gitlab
 
         @current_authenticated_job = job # rubocop:disable Gitlab/ModuleWithInstanceVariables
 
-        job.user
+        resolve_composite_identity_user(job.user)
       end
 
       def route_authentication_setting
@@ -292,8 +379,13 @@ module Gitlab
 
           if try(:namespace_inheritable, :authentication)
             access_token_from_namespace_inheritable
+          elsif pat_prefix_token?
+            # If the token has a PAT prefix (glpat-), skip OAuth lookup entirely.
+            # This avoids the expensive PBKDF2 hashing in OauthAccessToken.by_token
+            # for tokens that are clearly Personal Access Tokens.
+            find_personal_access_token
           else
-            # The token can be a PAT or an OAuth (doorkeeper) token
+            # The token can be a PAT or an OAuth (doorkeeper or IAM JWT) token
             begin
               find_oauth_access_token
             rescue UnauthorizedError
@@ -305,6 +397,13 @@ module Gitlab
         end
       end
 
+      def pat_prefix_token?
+        token = extract_personal_access_token
+        return false unless token.present?
+
+        Authn::Tokens::PersonalAccessToken.prefix?(token)
+      end
+
       def find_personal_access_token
         self.current_token = extract_personal_access_token
         return unless current_token
@@ -312,7 +411,7 @@ module Gitlab
         # The runner sends the job token for PUT /api/jobs/:id in the PRIVATE-TOKEN header
         # and the token JSON parameter. Ignore this personal access token so
         # that the job token can be authenticated.
-        return if api_request? && current_token.start_with?(::Ci::Build::TOKEN_PREFIX)
+        return if api_request? && ::Authn::Tokens::CiJobToken.prefix?(current_token)
 
         # Expiration, revocation and scopes are verified in `validate_access_token!`
         PersonalAccessToken.find_by_token(current_token.to_s) || raise(UnauthorizedError)
@@ -322,11 +421,25 @@ module Gitlab
         self.current_token = parsed_oauth_token
         return unless current_token
 
-        # Expiration, revocation and scopes are verified in `validate_access_token!`
-        oauth_token = OauthAccessToken.by_token(current_token)
-        raise UnauthorizedError unless oauth_token
+        # Try IAM JWT first (if enabled and looks like JWT)
+        oauth_token = Authn::Tokens::IamOauthToken.from_jwt(current_token)
 
-        oauth_token.revoke_previous_refresh_token!
+        # Fallback to Doorkeeper OAuth tokens
+        unless oauth_token
+          # Ensure we use correct load balancing logic in case it's a newly created token
+          load_balancer_stick_request(
+            ::OauthAccessToken,
+            :oauth_token,
+            current_token,
+            hash_id: true
+          )
+
+          # Expiration, revocation and scopes are verified in `validate_access_token!`
+          oauth_token = OauthAccessToken.by_token(current_token)
+          raise UnauthorizedError unless oauth_token
+
+          oauth_token.revoke_previous_refresh_token!
+        end
 
         ::Gitlab::Auth::Identity.link_from_oauth_token(oauth_token).tap do |identity|
           raise UnauthorizedError if identity && !identity.valid?
@@ -349,13 +462,13 @@ module Gitlab
       end
 
       def find_user_from_path_feed_token(token)
-        glft = token.match(PATH_DEPENDENT_FEED_TOKEN_REGEX)
+        glft = token.match(AuthFinders.path_dependent_feed_token_regex)
 
         return unless glft
 
         # make sure that user id uses decimal notation
-        user_id = glft[2].to_i(10)
-        digest = glft[1]
+        user_id = glft[3].to_i(10)
+        digest = glft[2]
 
         user = User.find_by_id(user_id)
         return unless user
@@ -379,28 +492,29 @@ module Gitlab
       end
 
       def find_user_from_job_token_query_params_or_header
-        self.current_token = current_request.params[JOB_TOKEN_PARAM].presence ||
-          current_request.params[RUNNER_JOB_TOKEN_PARAM].presence ||
-          current_request.env[JOB_TOKEN_HEADER].presence
+        self.current_token = get_job_token_from_query_param_or_header
         return unless current_token
+
+        validate_job_token_size!(current_token.to_s)
 
         job = find_valid_running_job_by_token!(current_token.to_s)
         @current_authenticated_job = job # rubocop:disable Gitlab/ModuleWithInstanceVariables
 
-        job.user
+        resolve_composite_identity_user(job.user)
       end
 
       def find_user_from_job_token_basic_auth
         return unless has_basic_credentials?(current_request)
 
         login, self.current_token = user_name_and_password(current_request)
+
         return unless login.present? && current_token.present?
         return unless ::Gitlab::Auth::CI_JOB_USER == login
 
         job = find_valid_running_job_by_token!(current_token.to_s)
         @current_authenticated_job = job # rubocop:disable Gitlab/ModuleWithInstanceVariables
 
-        job.user
+        resolve_composite_identity_user(job.user)
       end
 
       def parsed_oauth_token
@@ -503,6 +617,12 @@ module Gitlab
         PersonalAccessTokens::RevokeTokenFamilyService.new(token).execute
       end
 
+      def get_job_token_from_query_param_or_header
+        current_request.params[JOB_TOKEN_PARAM].presence ||
+          current_request.params[RUNNER_JOB_TOKEN_PARAM].presence ||
+          current_request.env[JOB_TOKEN_HEADER].presence
+      end
+
       def access_token_rotation_request?
         current_request.path.match(%r{access_tokens/(\d+|self)/rotate$})
       end
@@ -515,9 +635,11 @@ module Gitlab
       # Repositories::LfsApiController normally does the authentication,
       # but Rack Attack runs before those controllers.
       def find_user_for_git_or_lfs_request
-        return unless git_or_lfs_request?
+        strong_memoize(:find_user_for_git_or_lfs_request) do
+          next unless git_or_lfs_request?
 
-        find_user_from_lfs_token || find_user_from_basic_auth_password
+          find_user_from_lfs_token || find_user_from_basic_auth_password
+        end
       end
 
       def find_user_from_personal_access_token_for_api_or_git
@@ -546,6 +668,10 @@ module Gitlab
 
       def dependency_proxy_request?
         Gitlab::PathRegex.dependency_proxy_route_regex.match?(current_request.path)
+      end
+
+      def validate_job_token_size!(token)
+        raise InvalidTokenError, 'Token exceeds maximum size' if token.bytesize > MAX_JOB_TOKEN_SIZE_BYTES
       end
     end
   end
