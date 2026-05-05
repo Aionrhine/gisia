@@ -12,6 +12,21 @@ module BaseServiceUtility
 
   ### Convenience service methods
 
+  def notification_service
+    NotificationService.new
+  end
+
+  def event_service
+    EventCreateService.new
+  end
+
+  def todo_service
+    TodoService.new
+  end
+
+  def system_hook_service
+    SystemHooksService.new
+  end
 
   # Logging
 

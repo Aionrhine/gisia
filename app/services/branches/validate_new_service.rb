@@ -37,4 +37,3 @@ module Branches
 end
 
 Branches::ValidateNewService.prepend_mod
-

@@ -31,4 +31,3 @@ class UploadService
     Gitlab::CurrentSettings.max_attachment_size.megabytes.to_i
   end
 end
-

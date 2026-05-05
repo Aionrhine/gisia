@@ -65,4 +65,3 @@ module NotificationRecipients
     end
   end
 end
-

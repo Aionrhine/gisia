@@ -28,7 +28,7 @@ class AccessTokenValidationService
     elsif token.revoked?
       REVOKED
 
-    elsif !self.include_any_scope?(scopes)
+    elsif !token.try(:granular?) && !self.include_any_scope?(scopes)
       INSUFFICIENT_SCOPE
 
     elsif token.respond_to?(:impersonation) &&
@@ -43,6 +43,8 @@ class AccessTokenValidationService
 
   # True if the token's scope contains any of the passed scopes.
   def include_any_scope?(required_scopes)
+    return false if token.nil?
+
     if required_scopes.blank?
       true
     else
@@ -59,4 +61,3 @@ class AccessTokenValidationService
     end
   end
 end
-

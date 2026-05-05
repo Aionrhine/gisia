@@ -11,6 +11,10 @@ module Members
   # All roads to add members should take this path.
   class CreatorService
     class << self
+      def cannot_manage_owners?(source, current_user)
+        source.max_member_access_for_user(current_user) < Gitlab::Access::OWNER
+      end
+
       def parsed_access_level(access_level)
         access_levels.fetch(access_level) { access_level.to_i }
       end
@@ -81,8 +85,25 @@ module Members
         members
       end
 
+      # NOTE: `immediately_sync_authorizations` can be expensive to run in the foreground. This should only be used in
+      # rare cases where asynchronous authorization does not work (e.g. user is created and used immediately in the same
+      # request).
       def add_member(source, invitee, access_level, **args)
-        add_members(source, [invitee], access_level, **args).first
+        # We delete the immediately_sync_authorizations option as we don't want to support that for adding multiple
+        # members
+        sync_immediately = args.delete(:immediately_sync_authorizations)
+
+        result = add_members(source, [invitee], access_level, **args).first
+
+        # Some code paths really need the member to exist straight away as the user will be used straight away. Async
+        # refresh will almost always lead to bugs for these cases.
+        if sync_immediately && source.is_a?(Project)
+          ::AuthorizedProjectUpdate::ProjectRecalculatePerUserService
+            .new(source, invitee)
+            .execute
+        end
+
+        result
       end
 
       private
@@ -179,10 +200,11 @@ module Members
 
     def commit_member
       return add_commit_error unless can_commit_member?
+      return add_authorization_error if prevent_role_change?
 
       assign_member_attributes
 
-      return add_member_role_error if member_role_too_high?
+      return add_not_valid_org_error unless same_org?
 
       commit_changes
     end
@@ -198,9 +220,11 @@ module Members
       end
     end
 
-    # overridden in EE:Members::Groups::CreatorService
-    def member_role_too_high?
-      false
+    def prevent_role_change?
+      return false if skip_authorization?
+      return false if member_attributes[:access_level].blank?
+
+      member.prevent_role_assignement?(current_user, member_attributes)
     end
 
     def can_create_new_member?
@@ -234,9 +258,7 @@ module Members
         # See https://gitlab.com/gitlab-com/gl-infra/production/-/issues/6351
         # and https://gitlab.com/gitlab-org/gitlab/-/merge_requests/80920#note_911569038
         # for details.
-        was_new = new_record?
         member.save
-        NotificationService.new.new_member(member) if was_new && member.persisted?
       end
     end
 
@@ -259,16 +281,28 @@ module Members
 
     def add_commit_error
       msg = if new_record?
-              _('not authorized to create member')
+              s_('InviteUserToOrganization|not authorized to create member')
             else
-              _('not authorized to update member')
+              s_('InviteUserToOrganization|not authorized to update member')
             end
 
       member.errors.add(:base, :unauthorized, message: msg)
     end
 
-    def add_member_role_error
-      msg = _("the member access level can't be higher than the current user's one")
+    def add_authorization_error
+      msg = s_("InviteUserToOrganization|the member access level can't be higher than the current user's one")
+
+      member.errors.add(:base, msg)
+    end
+
+    def same_org?
+      return true unless member.user
+
+      member.user.member_of_organization?(source.organization_id)
+    end
+
+    def add_not_valid_org_error
+      msg = s_('InviteUserToOrganization|already belongs to another organization')
 
       member.errors.add(:base, msg)
     end
