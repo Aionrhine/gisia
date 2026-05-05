@@ -13,6 +13,7 @@ module Gitlab
   # See CheckRateLimit concern for usage.
   module ApplicationRateLimiter
     InvalidKeyError = Class.new(StandardError)
+    InvalidScopeError = Class.new(StandardError)
 
     LIMIT_USAGE_BUCKET = [0.25, 0.5, 0.75, 1].freeze
 
@@ -21,7 +22,7 @@ module Gitlab
       # Application rate limits
       #
       # Threshold value can be either an Integer or a Proc
-      # in order to not evaluate it's value every time this method is called
+      # in order to not evaluate its value every time this method is called
       # and only do that when it's needed.
       def rate_limits # rubocop:disable Metrics/AbcSize
         {
@@ -29,8 +30,11 @@ module Gitlab
           auto_rollback_deployment: { threshold: 1, interval: 3.minutes },
           autocomplete_users: { threshold: -> { application_settings.autocomplete_users_limit }, interval: 1.minute },
           autocomplete_users_unauthenticated: { threshold: -> { application_settings.autocomplete_users_unauthenticated_limit }, interval: 1.minute },
+          bitbucket_server_import: { threshold: 6, interval: 1.minute },
           bulk_delete_todos: { threshold: 6, interval: 1.minute },
           bulk_import: { threshold: 6, interval: 1.minute },
+          ci_job_processed_subscription: { threshold: 50, interval: 1.minute },
+          ci_pipeline_statuses_subscription: { threshold: 50, interval: 1.minute },
           code_suggestions_api_endpoint: { threshold: -> { application_settings.code_suggestions_api_rate_limit }, interval: 1.minute },
           create_organization_api: { threshold: -> { application_settings.create_organization_api_limit }, interval: 1.minute },
           delete_all_todos: { threshold: 1, interval: 5.minutes },
@@ -43,6 +47,8 @@ module Gitlab
           fetch_google_ip_list: { threshold: 10, interval: 1.minute },
           github_import: { threshold: 6, interval: 1.minute },
           fogbugz_import: { threshold: 1, interval: 1.minute },
+          geo_proxy: { threshold: 60, interval: 1.minute },
+          gitea_import: { threshold: 6, interval: 1.minute },
           gitlab_shell_operation: { threshold: application_settings.gitlab_shell_operation_limit, interval: 1.minute },
           glql: { threshold: 1, interval: 15.minutes },
           group_api: { threshold: -> { application_settings.group_api_limit }, interval: 1.minute },
@@ -63,15 +69,18 @@ module Gitlab
           notes_create: { threshold: -> { application_settings.notes_create_limit }, interval: 1.minute },
           notification_emails: { threshold: 1000, interval: 1.day },
           oauth_dynamic_registration: { threshold: 5, interval: 1.hour },
+          offline_export: { threshold: 6, interval: 1.minute },
           permanent_email_failure: { threshold: 5, interval: 1.day },
           phone_verification_send_code: { threshold: 5, interval: 1.day },
           phone_verification_verify_code: { threshold: 5, interval: 1.day },
           pipelines_create: { threshold: -> { application_settings.pipeline_limit_per_project_user_sha }, interval: 1.minute },
+          pipelines_created_per_user: { threshold: -> { application_settings.pipeline_limit_per_user }, interval: 1.minute },
           play_pipeline_schedule: { threshold: 1, interval: 1.minute },
           profile_add_new_email: { threshold: 5, interval: 1.minute },
           profile_resend_email_confirmation: { threshold: 5, interval: 1.minute },
           profile_update_username: { threshold: 10, interval: 1.minute },
           project_api: { threshold: -> { application_settings.project_api_limit }, interval: 1.minute },
+          project_members_api: { threshold: -> { application_settings.project_members_api_limit }, interval: 1.minute },
           project_download_export: { threshold: -> { application_settings.project_download_export_limit }, interval: 1.minute },
           project_export: { threshold: -> { application_settings.project_export_limit }, interval: 1.minute },
           project_fork_sync: { threshold: 10, interval: 30.minutes },
@@ -87,11 +96,17 @@ module Gitlab
             threshold: -> { application_settings.projects_api_rate_limit_unauthenticated }, interval: 10.minutes
           },
           raw_blob: { threshold: -> { application_settings.raw_blob_request_limit }, interval: 1.minute },
+          raw_blob_unauthenticated: { threshold: -> { application_settings.raw_blob_request_limit_unauthenticated }, interval: 1.minute },
+          runner_jobs_request_api: { threshold: -> { application_settings.runner_jobs_request_api_limit }, interval: 1.minute },
+          runner_jobs_patch_trace_api: { threshold: -> { application_settings.runner_jobs_patch_trace_api_limit }, interval: 1.minute },
+          runner_jobs_api: { threshold: -> { application_settings.runner_jobs_endpoints_api_limit }, interval: 1.minute },
           search_rate_limit: { threshold: -> { application_settings.search_rate_limit }, interval: 1.minute },
           search_rate_limit_unauthenticated: { threshold: -> { application_settings.search_rate_limit_unauthenticated }, interval: 1.minute },
+          service_account_creation: { threshold: 10, interval: 1.minute },
           temporary_email_failure: { threshold: 300, interval: 1.day },
           update_environment_canary_ingress: { threshold: 1, interval: 1.minute },
           update_namespace_name: { threshold: -> { application_settings.update_namespace_name_rate_limit }, interval: 1.hour },
+          user_large_commit_request: { threshold: 3, interval: 30.seconds },
           user_contributed_projects_api: { threshold: -> { application_settings.user_contributed_projects_api_limit }, interval: 1.minute },
           user_followers: { threshold: -> { application_settings.users_api_limit_followers }, interval: 1.minute },
           user_following: { threshold: -> { application_settings.users_api_limit_following }, interval: 1.minute },
@@ -106,7 +121,6 @@ module Gitlab
           user_status: { threshold: -> { application_settings.users_api_limit_status }, interval: 1.minute },
           username_exists: { threshold: 20, interval: 1.minute },
           users_get_by_id: { threshold: -> { application_settings.users_get_by_id_limit }, interval: 10.minutes },
-          vertex_embeddings_api: { threshold: 450, interval: 1.minute },
           web_hook_calls: { interval: 1.minute },
           web_hook_calls_low: { interval: 1.minute },
           web_hook_calls_mid: { interval: 1.minute },
@@ -137,7 +151,9 @@ module Gitlab
       #
       # @return [Boolean] Whether or not a request should be throttled
       def throttled?(key, scope:, resource: nil, threshold: nil, interval: nil, users_allowlist: nil, peek: false)
-        raise InvalidKeyError unless rate_limits[key]
+        raise InvalidKeyError, key unless rate_limits[key]
+
+        validate_scope!(key, scope)
 
         strategy = resource.present? ? IncrementPerActionedResource.new(resource.id) : IncrementPerAction.new
 
@@ -159,6 +175,8 @@ module Gitlab
       #
       # @return [Boolean] Whether or not a request should be throttled
       def resource_usage_throttled?(key, scope:, resource_key:, threshold:, interval:, peek: false)
+        validate_scope!(key, scope)
+
         strategy = IncrementResourceUsagePerAction.new(resource_key)
 
         _throttled?(key, scope: scope, strategy: strategy, threshold: threshold, interval: interval, peek: peek)
@@ -192,7 +210,7 @@ module Gitlab
         end
 
         throttled?(key, scope: scope, **options).tap do |throttled|
-          log_request(request, "#{key}_request_limit".to_sym, current_user) if throttled
+          log_request(request, :"#{key}_request_limit", current_user) if throttled
         end
       end
 
@@ -245,13 +263,24 @@ module Gitlab
         }
 
         if current_user
-          request_information.merge!({
+          request_information.merge!(
             user_id: current_user.id,
             username: current_user.username
-          })
+          )
         end
 
         logger.error(request_information)
+      end
+
+      # Returns the interval value for a given rate limit key
+      #
+      # @param key [Symbol] Key attribute registered in `.rate_limits`
+      # @return [Integer, nil] The interval value in seconds, or nil if not configured
+      def interval(key)
+        value = rate_limit_value_by_key(key, :interval)
+        raise InvalidKeyError if value.nil?
+
+        rate_limit_value(value)
       end
 
       private
@@ -293,12 +322,6 @@ module Gitlab
 
       def threshold(key)
         value = rate_limit_value_by_key(key, :threshold)
-
-        rate_limit_value(value)
-      end
-
-      def interval(key)
-        value = rate_limit_value_by_key(key, :interval)
 
         rate_limit_value(value)
       end
@@ -367,6 +390,17 @@ module Gitlab
         ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
       end
       strong_memoize_attr :initialize_filtered_params
+
+      def validate_scope!(key, scope, logger = Gitlab::AuthLogger)
+        return if scope
+
+        logger.warn(
+          message: 'Application_Rate_Limiter_Request_Without_Scope',
+          env: :"#{key}_request_limit"
+        )
+
+        raise InvalidScopeError, 'scope cannot be nil. Use :global for global rate limits.'
+      end
     end
   end
 end

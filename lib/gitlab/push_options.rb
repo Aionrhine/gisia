@@ -29,7 +29,7 @@ module Gitlab
         ]
       },
       ci: {
-        keys: [:skip, :variable, :input]
+        keys: [:skip, :variable, :input, :no_pipeline]
       },
       integrations: {
         keys: [:skip_ci]
@@ -39,6 +39,9 @@ module Gitlab
       },
       secret_push_protection: {
         keys: [:skip_all]
+      },
+      security_policy: {
+        keys: [:bypass_reason]
       }
     }).freeze
 

@@ -173,7 +173,7 @@ module Gitlab
         .except(:order)
 
       if hierarchy_order
-        quoted_objects_table_name = model.connection.quote_table_name(objects_table.name)
+        quoted_objects_table_name = model.adapter_class.quote_table_name(objects_table.name)
 
         parent_query = parent_query.select(
           cte.table[DEPTH_COLUMN] + 1,
@@ -206,7 +206,7 @@ module Gitlab
         .except(:order)
 
       if with_depth
-        quoted_objects_table_name = model.connection.quote_table_name(objects_table.name)
+        quoted_objects_table_name = model.adapter_class.quote_table_name(objects_table.name)
 
         descendants_query = descendants_query.select(
           cte.table[DEPTH_COLUMN] + 1,
@@ -225,13 +225,13 @@ module Gitlab
     def base_and_descendant_ids_cte
       cte = SQL::RecursiveCTE.new(:base_and_descendants)
 
-      base_query = descendants_base.except(:order).select(objects_table[:id])
+      base_query = descendants_base.except(:order).select(objects_id_columns)
 
       cte << base_query
 
       # Recursively get all the descendants of the base set.
       descendants_query = unscoped_model
-        .select(objects_table[:id])
+        .select(objects_id_columns)
         .from(from_tables(cte))
         .where(descendant_conditions(cte))
         .except(:order)
@@ -247,6 +247,10 @@ module Gitlab
 
     def parent_id_column(cte)
       cte.table[:parent_id]
+    end
+
+    def objects_id_columns
+      objects_table[:id]
     end
 
     def from_tables(cte)

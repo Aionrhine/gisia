@@ -23,8 +23,7 @@ module Banzai
   end
 
   def self.render_field(object, field, context = {})
-    text = object.__send__(field)
-    render(text, context)
+    Renderer.render_field(object, field, context)
   end
 
   def self.cache_collection_render(texts_and_contexts)

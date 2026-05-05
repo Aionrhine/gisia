@@ -13,6 +13,7 @@ module ObjectStorage
     GOOGLE_PROVIDER = 'Google'
 
     LOCATIONS = {
+      ai_catalog: Gitlab.config.ai_catalog,
       artifacts: Gitlab.config.artifacts,
       ci_secure_files: Gitlab.config.ci_secure_files,
       dependency_proxy: Gitlab.config.dependency_proxy,
@@ -20,6 +21,7 @@ module ObjectStorage
       lfs: Gitlab.config.lfs,
       packages: Gitlab.config.packages,
       pages: Gitlab.config.pages,
+      terraform_state: Gitlab.config.terraform_state,
       uploads: Gitlab.config.uploads
     }.freeze
 
@@ -80,6 +82,12 @@ module ObjectStorage
       credentials[:azure_storage_domain]
     end
     # End Azure-specific options
+
+    # Google-specific options
+    def universe_domain
+      credentials[:universe_domain]
+    end
+    # End Google-specific options
 
     def google?
       provider == GOOGLE_PROVIDER
