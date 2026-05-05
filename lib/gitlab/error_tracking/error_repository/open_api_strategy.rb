@@ -200,7 +200,7 @@ module Gitlab
         end
 
         def parse_json(payload)
-          Gitlab::Json.parse(payload)
+          Gitlab::Json.safe_parse(payload)
         rescue JSON::ParserError
         end
 

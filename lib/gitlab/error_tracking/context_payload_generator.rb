@@ -29,6 +29,9 @@ module Gitlab
           extra = extra.merge(inline_extra)
         end
 
+        formatted = Feature.logged_states_for_log
+        extra = extra.merge(feature_flag_states: formatted) unless formatted.empty?
+
         sanitize_request_parameters(extra)
       end
 
@@ -43,7 +46,7 @@ module Gitlab
             program: Gitlab.process_name,
             locale: I18n.locale,
             feature_category: current_context['meta.feature_category'],
-            Labkit::Correlation::CorrelationId::LOG_KEY.to_sym => Labkit::Correlation::CorrelationId.current_id
+            Labkit::Fields::CORRELATION_ID.to_sym => Labkit::Correlation::CorrelationId.current_id
           )
         )
       end
@@ -56,7 +59,7 @@ module Gitlab
 
       # Static tags that are set on application start
       def extra_tags_from_env
-        Gitlab::Json.parse(ENV.fetch('GITLAB_SENTRY_EXTRA_TAGS', '{}')).to_hash
+        Gitlab::Json.safe_parse(ENV.fetch('GITLAB_SENTRY_EXTRA_TAGS', '{}')).to_hash
       rescue StandardError => e
         Gitlab::AppLogger.debug("GITLAB_SENTRY_EXTRA_TAGS could not be parsed as JSON: #{e.class.name}: #{e.message}")
 
