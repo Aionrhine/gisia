@@ -37,7 +37,9 @@ class Compare
     {
       from: @straight ? start_commit_sha : (base_commit_sha || start_commit_sha),
       to: head_commit_sha
-    }
+    }.tap do |params|
+      params[:straight] = true if @straight
+    end
   end
 
   def cache_key
@@ -107,6 +109,13 @@ class Compare
     )
   end
 
+  def diff_stats
+    return unless diff_refs
+
+    repository.diff_stats(diff_refs.base_sha, diff_refs.head_sha)
+  end
+  strong_memoize_attr(:diff_stats)
+
   def changed_paths
     project
       .repository
@@ -126,6 +135,6 @@ class Compare
   end
 
   def first_diffs_slice(limit, diff_options = {})
-    diffs(diff_options.merge(max_files: limit)).diff_files
+    diffs(diff_options.merge(max_files: limit))
   end
 end

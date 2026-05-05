@@ -9,7 +9,6 @@
 module Ci
   class Ref < Ci::ApplicationRecord
     include AfterCommitQueue
-    include Gitlab::OptimisticLocking
 
     FAILING_STATUSES = %w[failed broken still_failing].freeze
 
@@ -61,7 +60,8 @@ module Ci
     end
 
     def update_status_by!(pipeline)
-      retry_lock(self, name: 'ci_ref_update_status_by') do
+      Gitlab::OptimisticLocking.retry_lock(self, name: 'ci_ref_update_status_by') do
+        next if pipeline.dangling? # last_finished_pipeline_id is never dangling, let's skip the query
         next unless last_finished_pipeline_id == pipeline.id
 
         case pipeline.status

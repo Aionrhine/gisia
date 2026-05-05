@@ -16,6 +16,9 @@ module Ci
 
     TRIGGER_TOKEN_PREFIX = 'glptt-'
 
+    EXPIRED_TOKEN_RETENTION = 30.days
+    MAX_DESCRIPTION_LENGTH = 2048
+
     self.limit_name = 'pipeline_triggers'
     self.limit_scope = :project
 
@@ -24,30 +27,17 @@ module Ci
 
     has_many :pipelines, class_name: 'Ci::Pipeline'
 
-    validates :token, presence: true, uniqueness: true
+    validates :token_encrypted, presence: true, uniqueness: true
     validates :owner, presence: true
     validates :project, presence: true
+    validates :description, length: { maximum: MAX_DESCRIPTION_LENGTH }, if: :description_changed?
 
     validate :expires_at_before_instance_max_expiry_date, on: :create
 
-    attr_encrypted :encrypted_token_tmp,
-      attribute: :encrypted_token,
-      mode: :per_attribute_iv,
-      algorithm: 'aes-256-gcm',
-      key: :db_key_base_32,
-      encode: false
+    before_validation :ensure_token
 
-    before_validation :set_default_values
-    before_save :copy_token_to_encrypted_token
+    add_authentication_token_field(:token, encrypted: :required, format_with_prefix: :token_prefix)
 
-    # rubocop:disable Gitlab/TokenWithoutPrefix -- we are doing this ourselves here since ensure_token
-    # does not work as expected
-    add_authentication_token_field(:token,
-      encrypted: -> {
-        Feature.enabled?(:encrypted_trigger_token_lookup, :instance) ? :required : :migrating
-      }
-    )
-    # rubocop:enable Gitlab/TokenWithoutPrefix
     scope :with_last_used, -> do
       ci_pipelines = Ci::Pipeline.arel_table
       last_used_pipelines =
@@ -62,23 +52,21 @@ module Ci
     end
 
     scope :with_token, ->(tokens) {
-      tokens = Array.wrap(tokens).compact.reject(&:blank?)
-      if Feature.enabled?(:encrypted_trigger_token_lookup, :instance)
-        encrypted_tokens = tokens.map { |token| Ci::Trigger.encode(token) }
-        where(token_encrypted: encrypted_tokens)
-      else
-        where(token: tokens)
-      end
+      tokens = Array.wrap(tokens).reject(&:blank?)
+      encrypted_tokens = tokens.map { |token| Ci::Trigger.encode(token) }
+      where(token_encrypted: encrypted_tokens)
     }
 
-    def token=(token_value)
-      super
-      self.set_token(token_value)
+    scope :ready_for_deletion, -> {
+      where(expires_at: ...EXPIRED_TOKEN_RETENTION.ago)
+    }
+
+    def self.prefix_for_trigger_token
+      ::Authn::TokenField::PrefixHelper.prepend_instance_prefix(TRIGGER_TOKEN_PREFIX)
     end
 
-    def set_default_values
-      self.set_token(self.attributes['token']) if self.attributes['token'].present?
-      self.set_token("#{TRIGGER_TOKEN_PREFIX}#{SecureRandom.hex(20)}") if self.token.blank?
+    def token=(token_value)
+      self.set_token(token_value)
     end
 
     def last_used
@@ -89,7 +77,10 @@ module Ci
     end
 
     def short_token
-      token.delete_prefix(TRIGGER_TOKEN_PREFIX)[0...4] if token.present?
+      return unless token.present?
+
+      token.delete_prefix(Authn::TokenField::PrefixHelper.instance_prefix)
+           .delete_prefix(TRIGGER_TOKEN_PREFIX)[0...4]
     end
     alias_method :trigger_short_token, :short_token
 
@@ -99,9 +90,11 @@ module Ci
 
     protected
 
-    def expires_at_before_instance_max_expiry_date
-      return if Feature.disabled?(:trigger_token_expiration, project)
+    def token_prefix
+      Ci::Trigger.prefix_for_trigger_token
+    end
 
+    def expires_at_before_instance_max_expiry_date
       return unless expires_at
 
       max_expiry_date = Date.current.advance(days: PersonalAccessToken::MAX_PERSONAL_ACCESS_TOKEN_LIFETIME_IN_DAYS)
@@ -111,12 +104,6 @@ module Ci
         :expires_at,
         format(_("must be before %{expiry_date}"), expiry_date: max_expiry_date)
       )
-    end
-
-    private
-
-    def copy_token_to_encrypted_token
-      self.encrypted_token_tmp = token
     end
   end
 end

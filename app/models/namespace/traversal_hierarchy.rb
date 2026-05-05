@@ -5,6 +5,7 @@
 # Copyright (c) GitLab Inc.
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
 # ======================================================
+
 #
 # A Namespace::TraversalHierarchy is the collection of namespaces that descend
 # from a root Namespace as defined by the Namespace#traversal_ids attributes.
