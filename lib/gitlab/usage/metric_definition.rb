@@ -89,7 +89,7 @@ module Gitlab
       def json_schema
         return unless has_json_schema?
 
-        @json_schema ||= Gitlab::Json.parse(File.read(json_schema_path))
+        @json_schema ||= Gitlab::Json.safe_parse(File.read(json_schema_path))
       end
 
       def json_schema_path
