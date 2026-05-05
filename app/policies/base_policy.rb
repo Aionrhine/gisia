@@ -20,6 +20,9 @@ class BasePolicy < DeclarativePolicy::Base
     end
   end
 
+  # This condition is overridden in EE
+  condition(:auditor, score: 0) { false }
+
   desc "The current instance is a GitLab Dedicated instance"
   condition :gitlab_dedicated do
     Gitlab::CurrentSettings.gitlab_dedicated_instance?
@@ -56,10 +59,6 @@ class BasePolicy < DeclarativePolicy::Base
   desc "User is automation bot"
   with_options scope: :user, score: 0
   condition(:automation_bot) { @user&.automation_bot? }
-
-  desc "User is llm bot"
-  with_options scope: :user, score: 0
-  condition(:llm_bot) { @user&.llm_bot? }
 
   desc "User is placeholder"
   with_options scope: :user, score: 0
@@ -104,18 +103,28 @@ class BasePolicy < DeclarativePolicy::Base
 
   rule { admin }.policy do
     # Only for actual administrator accounts, behavior affected by admin mode application setting
+    # rubocop:disable Gitlab/Authz/EnableInBasePolicy -- As of Feb 2026, we do not allow enable in base policy
     enable :admin_all_resources
+    # rubocop:enable Gitlab/Authz/EnableInBasePolicy
+
     # Policy extended in EE to also enable auditors
+    # rubocop:disable Gitlab/Authz/EnableInBasePolicy -- As of Feb 2026, we do not allow enable in base policy
     enable :read_all_resources
+    # rubocop:enable Gitlab/Authz/EnableInBasePolicy
+    # rubocop:disable Gitlab/Authz/EnableInBasePolicy -- As of Feb 2026, we do not allow enable in base policy
     enable :change_repository_storage
+    # rubocop:enable Gitlab/Authz/EnableInBasePolicy
   end
 
   rule { gitlab_dedicated & admin }.policy do
+    # rubocop:disable Gitlab/Authz/EnableInBasePolicy -- As of Feb 2026, we do not allow enable in base policy
     enable :read_dedicated_hosted_runner_usage
+    # rubocop:enable Gitlab/Authz/EnableInBasePolicy
   end
 
+  # rubocop:disable Gitlab/Authz/EnableInBasePolicy -- As of Feb 2026, we do not allow enable in base policy
   rule { default }.enable :read_cross_project
-
+  # rubocop:enable Gitlab/Authz/EnableInBasePolicy
   condition(:is_gitlab_com, score: 0, scope: :global) { ::Gitlab.com? }
 
   rule { placeholder_user }.prevent_all

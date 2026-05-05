@@ -9,4 +9,3 @@
 class ProjectLabelPolicy < BasePolicy
   delegate { @subject.preloaded_parent_container }
 end
-

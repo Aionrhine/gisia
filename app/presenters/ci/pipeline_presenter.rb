@@ -28,7 +28,8 @@ module Ci
         filtered_by_workflow_rules: Ci::Pipeline.workflow_rules_failure_message,
         composite_identity_forbidden: 'This pipeline did not run because the code should be reviewed by a non-AI ' \
           'user first. Verify that all changes in this merge request are safe before running a new pipeline.',
-        pipeline_ref_creation_failure: 'Failed to create pipeline ref.' }
+        pipeline_ref_creation_failure: 'Failed to create pipeline ref.',
+        filtered_by_no_pipeline: 'The pipeline did not run. The commit was pushed with the `ci.no_pipeline` option.' }
     end
 
     presents ::Ci::Pipeline, as: :pipeline
@@ -89,9 +90,9 @@ module Ci
           links: all_related_merge_request_links.join(', ')
         }).html_safe
       elsif pipeline.ref && pipeline.ref_exists?
-        safe_format(_("For %{link_to_pipeline_ref}"), link_to_pipeline_ref: link_to_pipeline_ref)
+        safe_format(s_("Pipeline|In %{pipeline_ref}"), pipeline_ref: link_to_pipeline_ref)
       elsif pipeline.ref
-        safe_format(_("For %{ref}"), ref: plain_ref_name)
+        safe_format(s_("Pipeline|In %{pipeline_ref}"), pipeline_ref: plain_ref_name)
       end
     end
 

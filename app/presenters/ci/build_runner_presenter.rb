@@ -38,15 +38,29 @@ module Ci
     end
 
     def git_depth
-      if git_depth_variable
-        git_depth_variable[:value]
-      else
-        project.ci_default_git_depth
-      end.to_i
+      (git_depth_value || project.ci_default_git_depth).to_i
     end
 
     def repo_object_format
       project.repository_object_format.to_s
+    end
+
+    def runner_inputs
+      return [] unless options&.key?(:inputs)
+
+      input_values = inputs.index_by(&:name)
+
+      options.fetch(:inputs, {}).map do |name, spec|
+        input_value = input_values[name.to_s]&.value || spec[:default]
+
+        {
+          key: name,
+          value: {
+            content: input_value,
+            type: spec[:type]
+          }
+        }
+      end
     end
 
     def runner_variables
@@ -77,7 +91,6 @@ module Ci
     end
 
     def project_jobs_running_on_instance_runners_count
-      # if not instance runner we don't care about that value and present `+Inf` as a placeholder for Prometheus
       return '+Inf' unless runner.instance_type?
 
       return project.instance_runner_running_jobs_count.to_s if
@@ -147,13 +160,25 @@ module Ci
     end
 
     def refspec_for_persistent_ref
-      "+#{pipeline.persistent_ref.path}:#{pipeline.persistent_ref.path}"
+      if Feature.enabled?(:runner_refspec_use_sha_instead_of_persistent_ref, project)
+        "+#{sha}:#{pipeline.persistent_ref.path}"
+      else
+        "+#{pipeline.persistent_ref.path}:#{pipeline.persistent_ref.path}"
+      end
     end
 
-    def git_depth_variable
-      strong_memoize(:git_depth_variable) do
-        variables&.find { |variable| variable[:key] == 'GIT_DEPTH' }
+    def git_depth_value
+      strong_memoize(:git_depth_value) do
+        variables&.to_hash&.dig("GIT_DEPTH")
       end
+    end
+
+    def instance_id
+      Gitlab::GlobalAnonymousId.instance_id
+    end
+
+    def instance_uuid
+      Gitlab::GlobalAnonymousId.instance_uuid
     end
   end
 end
