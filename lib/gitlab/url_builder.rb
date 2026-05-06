@@ -47,10 +47,6 @@ module Gitlab
           instance.project_job_url(object.project, object, **options)
         when ::Ci::Pipeline
           instance.project_pipeline_url(object.project, object, **options)
-        when Commit
-          commit_url(object, **options)
-        when Compare
-          compare_url(object, **options)
         when Group
           instance.group_canonical_url(object, **options)
         # This also covers WorkItem due to inheritance
@@ -58,34 +54,14 @@ module Gitlab
           instance.work_item_url(object, **options)
         when MergeRequest
           instance.merge_request_url(object, **options)
-        when Milestone
-          instance.milestone_url(object, **options)
-        when Note
-          note_url(object, **options)
-        when Release
-          instance.release_url(object, **options)
-        when ::Organizations::Organization
-          instance.organization_root_url(object.path, **options)
         when Project
           instance.project_url(object, **options)
-        when Snippet
-          snippet_url(object, **options)
         when User
           instance.user_url(object, **options)
         when Namespaces::UserNamespace
           instance.user_url(object.owner, **options)
         when Namespaces::ProjectNamespace
           instance.project_url(object.project, **options)
-        when Wiki
-          wiki_url(object, **options)
-        when WikiPage
-          wiki_page_url(object.wiki, object, **options)
-        when WikiPage::Meta
-          wiki_page_url(object.container.wiki, object.canonical_slug, **options)
-        when ::DesignManagement::Design
-          design_url(object, **options)
-        when ::Packages::Package
-          package_url(object, **options)
         when ::Key
           instance.user_settings_ssh_key_url(object)
         else
