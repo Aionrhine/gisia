@@ -381,6 +381,7 @@ GEM
     grpc (1.80.0-x86_64-linux-musl)
       google-protobuf (>= 3.25, < 5.0)
       googleapis-common-protos-types (~> 1.0)
+    gvltools (0.4.0)
     haml (6.3.0)
       temple (>= 0.8.2)
       thor
@@ -1175,6 +1176,7 @@ DEPENDENCIES
   gitlab_chronic_duration (~> 0.12)
   google-protobuf (~> 3.25, >= 3.25.3)
   grpc (= 1.80.0)
+  gvltools (~> 0.4.0)
   haml-rails (~> 2.0)
   hamlit (~> 3.0.0)
   html-pipeline (~> 2.14.3)
