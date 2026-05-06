@@ -9,6 +9,7 @@ module API
         include ::Projects::SetsUpdatedBy
 
         before_action :find_issue!, only: [:show, :update, :destroy]
+        before_action :check_issue_visibility!, only: [:show, :update, :destroy]
         before_action :authorize_read_issues!, only: [:index]
         before_action :authorize_create_issue!, only: [:create]
         before_action :authorize_read_issuable!, only: [:show]
@@ -19,7 +20,7 @@ module API
 
         def index
           order_column = params[:state] == 'closed' ? { closed_at: :desc } : { created_at: :desc }
-          @issues = paginate(apply_filters(@project.issues).order(order_column))
+          @issues = paginate(apply_filters(@project.issues_visible_to(current_user)).order(order_column))
         end
 
         def show; end
@@ -77,6 +78,10 @@ module API
           not_found! unless @issue
         end
 
+        def check_issue_visibility!
+          not_found! if @issue.confidential? && !can?(current_user, :read_issue, @issue)
+        end
+
         def label_scope
           Label.where(namespace_id: @project.namespace_id)
         end
@@ -84,9 +89,9 @@ module API
         def handle_state_event
           case params[:state_event]
           when 'close'
-            @issue.close(current_user) unless @issue.closed?
+            @issue.close!(current_user) unless @issue.closed?
           when 'reopen'
-            @issue.reopen unless @issue.opened?
+            @issue.reopen! unless @issue.opened?
           end
         end
 

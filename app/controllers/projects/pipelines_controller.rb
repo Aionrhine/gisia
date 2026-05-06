@@ -3,6 +3,7 @@
 class Projects::PipelinesController < Projects::ApplicationController
   before_action :authorize_read_pipeline!
   before_action :authorize_create_pipeline!, only: [:new, :create]
+  before_action :validate_ref_prefix!, only: [:create]
   before_action :pipeline, only: [:show, :jobs]
 
   def index
@@ -58,6 +59,14 @@ class Projects::PipelinesController < Projects::ApplicationController
     @pipeline_create_params ||= params.permit(:ref)
   end
 
+  def validate_ref_prefix!
+    ref = pipeline_create_params[:ref]
+    return if Gitlab::Git.branch_ref?(ref) || Gitlab::Git.tag_ref?(ref)
+
+    flash[:alert] = _('ref must include a valid prefix')
+    redirect_to new_project_pipeline_path(@project)
+  end
+
   def load_refs
     branches = project.repository.branch_names.sort.map { |b| { label: b, ref: "#{Gitlab::Git::BRANCH_REF_PREFIX}#{b}" } }
     tags = project.repository.tag_names.sort.map { |t| { label: t, ref: "#{Gitlab::Git::TAG_REF_PREFIX}#{t}" } }
@@ -65,10 +74,10 @@ class Projects::PipelinesController < Projects::ApplicationController
   end
 
   def authorize_read_pipeline!
-    forbidden! unless current_user.can?(:read_pipeline, @project)
+    forbidden! unless can?(current_user, :read_pipeline, @project)
   end
 
   def authorize_create_pipeline!
-    forbidden! unless current_user.can?(:create_pipeline, @project)
+    forbidden! unless can?(current_user, :create_pipeline, @project)
   end
 end
