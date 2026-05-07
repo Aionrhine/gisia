@@ -1,0 +1,6 @@
+name: cable
+description: Cable database for SolidCable messages
+gitlab_schemas:
+  - gitlab_shared
+klass: SolidCable::Record
+uses_load_balancing: false
