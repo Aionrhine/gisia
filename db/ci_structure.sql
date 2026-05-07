@@ -1987,7 +1987,8 @@ CREATE TABLE public.namespace_descendants (
     outdated_at timestamp with time zone,
     calculated_at timestamp with time zone,
     all_active_project_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL,
-    all_unarchived_project_ids bigint[] DEFAULT '{}'::bigint[]
+    all_unarchived_project_ids bigint[] DEFAULT '{}'::bigint[],
+    self_and_descendant_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL
 );
 
 
@@ -6727,6 +6728,7 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507152425'),
 ('20260507063936'),
 ('20260507063933'),
 ('20260507063431'),
