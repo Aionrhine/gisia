@@ -2262,6 +2262,40 @@ ALTER SEQUENCE public.oauth_applications_id_seq OWNED BY public.oauth_applicatio
 
 
 --
+-- Name: organizations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organizations (
+    id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    path text NOT NULL,
+    visibility_level smallint DEFAULT 0 NOT NULL,
+    state smallint DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.organizations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
+
+
+--
 -- Name: personal_access_token_last_used_ips; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3412,6 +3446,13 @@ ALTER TABLE ONLY public.oauth_applications ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
+-- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('public.organizations_id_seq'::regclass);
+
+
+--
 -- Name: personal_access_token_last_used_ips id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4048,6 +4089,14 @@ ALTER TABLE ONLY public.oauth_access_tokens
 
 ALTER TABLE ONLY public.oauth_applications
     ADD CONSTRAINT oauth_applications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
 
 
 --
@@ -5749,6 +5798,34 @@ CREATE UNIQUE INDEX index_oauth_applications_on_uid ON public.oauth_applications
 
 
 --
+-- Name: index_organizations_on_lower_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_organizations_on_lower_path ON public.organizations USING btree (lower(path));
+
+
+--
+-- Name: index_organizations_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_name ON public.organizations USING btree (name);
+
+
+--
+-- Name: index_organizations_on_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_path ON public.organizations USING btree (path);
+
+
+--
+-- Name: index_organizations_on_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_state ON public.organizations USING btree (state);
+
+
+--
 -- Name: index_personal_access_tokens_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6727,6 +6804,7 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507152426'),
 ('20260507152425'),
 ('20260507063936'),
 ('20260507063933'),
