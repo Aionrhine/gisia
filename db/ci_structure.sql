@@ -122,7 +122,8 @@ CREATE TABLE public.application_settings (
     encrypted_external_pipeline_validation_service_token_iv text,
     password_authentication_enabled_for_git boolean DEFAULT true NOT NULL,
     password_authentication_enabled_for_web boolean,
-    commit_email_hostname character varying
+    commit_email_hostname character varying,
+    can_create_organization boolean DEFAULT false NOT NULL
 );
 
 
@@ -6805,6 +6806,7 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507152428'),
 ('20260507152427'),
 ('20260507152426'),
 ('20260507152425'),
