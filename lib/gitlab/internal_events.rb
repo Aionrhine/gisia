@@ -26,9 +26,12 @@ module Gitlab
       include Gitlab::UsageDataCounters::RedisHashCounter
 
       def track_event(event_name, category: nil, additional_properties: {}, **kwargs)
+        extract_additional_properties!(event_name, additional_properties, kwargs)
+
         Gitlab::Tracking::EventValidator.new(event_name, additional_properties, kwargs).validate!
 
         send_snowplow_event = kwargs.key?(:send_snowplow_event) ? kwargs.delete(:send_snowplow_event) : true
+
         event_router = Gitlab::InternalEvents::EventsRouter.new(event_name, additional_properties, kwargs)
         track_analytics_event(event_name, send_snowplow_event, category: category,
           additional_properties: event_router.public_additional_properties, **kwargs)
@@ -44,12 +47,19 @@ module Gitlab
           extra[k] = kwargs[k].is_a?(::ApplicationRecord) ? kwargs[k].try(:id) : kwargs[k]
         end
 
-        Gitlab::ErrorTracking.track_and_raise_for_dev_exception(
-          e,
+        error_payload = {
+          server_version: Gitlab::VERSION,
           event_name: event_name,
           additional_properties: additional_properties,
           kwargs: extra
-        )
+        }
+
+        if Gitlab.com? || Gitlab.dev_or_test_env? # rubocop:disable Gitlab/AvoidGitlabInstanceChecks -- not a feature, need to process errors on SM instances differently
+          Gitlab::ErrorTracking.track_and_raise_for_dev_exception(e, **error_payload)
+        else
+          Gitlab::AppLogger.warn(e, **error_payload)
+        end
+
         nil
       end
 
@@ -63,12 +73,10 @@ module Gitlab
         kwargs[:namespace] ||= project.namespace if project
 
         update_redis_values(event_name, additional_properties, kwargs)
-        trigger_snowplow_event(event_name, category, base_additional_properties, extra, kwargs) if send_snowplow_event
-        send_application_instrumentation_event(event_name, base_additional_properties, kwargs) if send_snowplow_event
+        return unless send_snowplow_event
 
-        return unless Feature.enabled?(:early_access_program, kwargs[:user], type: :wip)
-
-        create_early_access_program_event(event_name, category, additional_properties[:label], kwargs)
+        trigger_snowplow_event(event_name, category, base_additional_properties, extra, kwargs)
+        send_application_instrumentation_event(event_name, base_additional_properties, kwargs)
       end
 
       def update_redis_values(event_name, additional_properties, kwargs)
@@ -143,7 +151,7 @@ module Gitlab
         )
       end
 
-      def trigger_snowplow_event(event_name, category, additional_properties, extra, kwargs)
+      def trigger_snowplow_event(event_name, category, base_additional_properties, extra, kwargs)
         user = kwargs[:user]
         project = kwargs[:project]
         namespace = kwargs[:namespace]
@@ -163,7 +171,13 @@ module Gitlab
         ).to_context
 
         contexts = [standard_context, service_ping_context]
-        track_struct_event(event_name, category, contexts: contexts, additional_properties: additional_properties)
+
+        if extra.present?
+          event = Gitlab::Tracking::EventDefinition.find(event_name)
+          contexts << Tracking::AiContext.new(extra).to_context if event.duo_event?
+        end
+
+        track_struct_event(event_name, category, contexts: contexts, additional_properties: base_additional_properties)
       end
 
       def track_struct_event(event_name, category, contexts:, additional_properties:)
@@ -187,28 +201,22 @@ module Gitlab
         gitlab_sdk_client.track(event_name, tracked_attributes)
       end
 
-      def create_early_access_program_event(event_name, category, event_label, kwargs)
-        user, namespace = kwargs.values_at(:user, :namespace)
-        return if user.nil? || !namespace&.namespace_settings&.early_access_program_participant?
-
-        ::EarlyAccessProgram::TrackingEvent.create(
-          user: user, event_name: event_name.to_s, event_label: event_label, category: category
-        )
-      end
-
-      def gitlab_sdk_client
-        app_id = ENV['GITLAB_ANALYTICS_ID']
-        host = ENV['GITLAB_ANALYTICS_URL']
-
-        return unless app_id.present? && host.present?
-
-        buffer_size = Feature.enabled?(:internal_events_batching) ? SNOWPLOW_EMITTER_BUFFER_SIZE : DEFAULT_BUFFER_SIZE
-        GitlabSDK::Client.new(app_id: app_id, host: host, buffer_size: buffer_size)
-      end
+      def gitlab_sdk_client; end
       strong_memoize_attr :gitlab_sdk_client
 
       def base_additional_properties_keys
         Gitlab::Tracking::EventValidator::BASE_ADDITIONAL_PROPERTIES.keys
+      end
+
+      def extract_additional_properties!(event_name, additional_properties, kwargs)
+        return unless additional_properties.empty?
+
+        event_definition = Gitlab::Tracking::EventDefinition.find(event_name)
+        return unless event_definition&.additional_properties
+
+        event_definition.additional_properties.each_key do |key|
+          additional_properties[key] = kwargs.delete(key) if kwargs.key?(key)
+        end
       end
     end
   end

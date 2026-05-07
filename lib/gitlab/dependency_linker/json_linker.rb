@@ -46,7 +46,7 @@ module Gitlab
 
       def json
         @json ||= begin
-          Gitlab::Json.parse(plain_text)
+          Gitlab::Json.safe_parse(plain_text)
         rescue StandardError
           nil
         end

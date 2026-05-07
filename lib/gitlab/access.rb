@@ -20,6 +20,7 @@ module Gitlab
     GUEST          = 10
     PLANNER        = 15
     REPORTER       = 20
+    SECURITY_MANAGER = 25
     DEVELOPER      = 30
     MAINTAINER     = 40
     OWNER          = 50
@@ -46,8 +47,22 @@ module Gitlab
     class << self
       delegate :values, to: :options
 
+      def level_encompasses?(current_access_level:, level_to_assign:)
+        # Roles that don't follow the inherited hierarchy can only be assigned by owners
+        # or by users with the same role
+        non_hierarchy_roles = [PLANNER, SECURITY_MANAGER]
+
+        return current_access_level.in?([OWNER, level_to_assign]) if non_hierarchy_roles.include?(level_to_assign)
+
+        level_to_assign.to_i <= current_access_level.to_i
+      end
+
       def all_values
         options_with_owner.values
+      end
+
+      def all_keys
+        options_with_owner.keys
       end
 
       def options
@@ -55,9 +70,10 @@ module Gitlab
           "Guest" => GUEST,
           "Planner" => PLANNER,
           "Reporter" => REPORTER,
+          "Security Manager" => (Gitlab::Security::SecurityManagerConfig.enabled? ? SECURITY_MANAGER : nil),
           "Developer" => DEVELOPER,
           "Maintainer" => MAINTAINER
-        }
+        }.compact
       end
 
       def options_with_owner
@@ -76,22 +92,17 @@ module Gitlab
         {
           NO_ACCESS => s_('MemberRole|The None role is assigned to the invited group users of a shared project when project sharing is disabled in group setting.'),
           GUEST => s_('MemberRole|The Guest role is for users who need visibility into a project or group but should not have the ability to make changes, such as external stakeholders.'),
-          PLANNER => s_('The Planner role is suitable for team members who need to manage projects and track work items but do not need to contribute code.'),
+          PLANNER => s_('MemberRole|The Planner role is suitable for team members who need to manage projects and track work items but do not need to contribute code.'),
           REPORTER => s_('MemberRole|The Reporter role is suitable for team members who need to stay informed about a project or group but do not actively contribute code.'),
+          SECURITY_MANAGER => (Gitlab::Security::SecurityManagerConfig.enabled? ? s_('MemberRole|The Security Manager role is for security team members who need to view and manage security features for the group or project.') : nil),
           DEVELOPER => s_('MemberRole|The Developer role gives users access to contribute code while restricting sensitive administrative actions.'),
           MAINTAINER => s_('MemberRole|The Maintainer role is primarily used for managing code reviews, approvals, and administrative settings for projects. This role can also manage project memberships.'),
           OWNER => s_('MemberRole|The Owner role is typically assigned to the individual or team responsible for managing and maintaining the group or creating the project. This role has the highest level of administrative control, and can manage all aspects of the group or project, including managing other Owners.')
-        }
+        }.compact
       end
 
       def sym_options
-        {
-          guest: GUEST,
-          planner: PLANNER,
-          reporter: REPORTER,
-          developer: DEVELOPER,
-          maintainer: MAINTAINER
-        }
+        options.transform_keys { |key| key.downcase.tr(' ', '_').to_sym }
       end
 
       def sym_options_with_owner
@@ -231,7 +242,7 @@ module Gitlab
     end
 
     def human_access_labeled
-      "#{s_('Default role')}: #{human_access}"
+      format(s_('MemberRole|Default role: %{role}'), role: human_access)
     end
 
     def owner?

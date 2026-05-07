@@ -26,7 +26,6 @@ class GlobalPolicy < BasePolicy
   end
 
   condition(:project_bot, scope: :user) { @user&.project_bot? }
-  condition(:migration_bot, scope: :user) { @user&.migration_bot? }
 
   condition(:service_account, scope: :user) { @user&.service_account? }
 
@@ -92,7 +91,7 @@ class GlobalPolicy < BasePolicy
 
   rule { ~can?(:access_api) }.prevent :execute_graphql_mutation
 
-  rule { blocked | (internal & ~migration_bot & ~security_bot & ~security_policy_bot) }.policy do
+  rule { blocked | (internal & ~security_bot & ~security_policy_bot) }.policy do
     prevent :access_git
   end
 
@@ -184,6 +183,8 @@ class GlobalPolicy < BasePolicy
 
   # We can't use `read_statistics` because the user may have different permissions for different projects
   rule { admin }.enable :use_project_statistics_filters
+
+  rule { admin }.enable :admin_service_accounts
 
   rule { external_user }.prevent :create_snippet
 end

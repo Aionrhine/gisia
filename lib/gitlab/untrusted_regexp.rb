@@ -24,7 +24,7 @@ module Gitlab
 
     # recreate Ruby's \R metacharacter
     # https://ruby-doc.org/3.2.2/Regexp.html#class-Regexp-label-Character+Classes
-    BACKSLASH_R = '(\n|\v|\f|\r|\x{0085}|\x{2028}|\x{2029}|\r\n)'
+    BACKSLASH_R = '(\n|\v|\f|\r\n|\r|\x{0085}|\x{2028}|\x{2029})'
 
     delegate :===, :source, to: :regexp
 
@@ -46,6 +46,8 @@ module Gitlab
     # There is no built-in replace with block support (like `gsub`).  We can accomplish
     # the same thing by parsing and rebuilding the string with the substitutions.
     def replace_gsub(text, limit: 0)
+      return enum_for(:replace_gsub, text, limit:) unless block_given?
+
       new_text = +''
       remainder = text
       count = 0

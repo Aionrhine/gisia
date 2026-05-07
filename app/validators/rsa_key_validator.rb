@@ -31,4 +31,3 @@ class RsaKeyValidator < ActiveModel::EachValidator
     false
   end
 end
-

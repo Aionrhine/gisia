@@ -22,7 +22,7 @@ class IssuePolicy < IssuablePolicy
   # rubocop:disable Cop/UserAdmin -- specifically check the admin attribute
   desc "User can read confidential issues"
   condition(:can_read_confidential) do
-    @user && (@user.admin? || planner_or_reporter_access? || assignee_or_author?)
+    @user && (@user.admin? || can?(:read_confidential_issues) || assignee_or_author?)
   end
   # rubocop:enable Cop/UserAdmin
 
@@ -69,6 +69,8 @@ class IssuePolicy < IssuablePolicy
     end
   end
 
+  rule { is_container_member & is_author }.enable :destroy_issue
+
   rule { group_issue & can?(:read_group) }.policy do
     enable :create_note
     enable :award_emoji
@@ -108,8 +110,6 @@ class IssuePolicy < IssuablePolicy
   rule { can?(:read_issue) & notes_widget_enabled }.policy do
     enable :read_note
   end
-
-  rule { can?(:maintainer_access) }.enable :admin_note
 
   rule { ~can?(:read_issue) }.policy do
     prevent :create_note
@@ -152,15 +152,16 @@ class IssuePolicy < IssuablePolicy
     enable :set_confidentiality
   end
 
-  rule { can?(:guest_access) & can?(:read_issue) }.policy do
-    enable :admin_issue_relation
+  rule { ~can?(:read_issue) }.policy do
+    prevent :admin_issue_relation
   end
 
-  rule { can?(:guest_access) & can?(:read_issue) & is_project_member }.policy do
-    enable :admin_issue_link
+  rule { ~admin & (~can?(:read_issue) | ~is_container_member) }.policy do
+    prevent :admin_issue_link
   end
 
-  rule { support_bot & service_desk_enabled }.enable :admin_issue_relation
+  rule { support_bot }.enable :admin_issue_relation
+  rule { support_bot & ~service_desk_enabled }.prevent_all
 
   rule { can_read_crm_contacts }.policy do
     enable :read_crm_contacts
@@ -170,29 +171,21 @@ class IssuePolicy < IssuablePolicy
     enable :set_issue_crm_contacts
   end
 
-  rule { planner_or_reporter_access }.policy do
-    enable :mark_note_as_internal
-  end
-
   rule { can?(:admin_issue) & supports_move_and_clone }.policy do
     enable :move_issue
     enable :clone_issue
   end
 
-  rule { is_incident & ~can?(:reporter_access) }.policy do
+  rule { is_incident & ~can?(:_update_incident_work_item) }.policy do
     prevent :admin_issue
     prevent :update_issue
   end
 
-  rule { is_incident & ~can?(:owner_access) }.policy do
+  rule { is_incident & ~can?(:_delete_incident_work_item) }.policy do
     prevent :destroy_issue
   end
 
-  # IMPORTANT: keep the prevention rules as last rules defined in the policy, as these are based on
-  # all abilities defined up to this point.
-  rule { ~work_item_type_available }.policy do
-    prevent(*::IssuePolicy.ability_map.map.keys)
-  end
+  rule { ~work_item_type_available }.prevent_all
 end
 
 IssuePolicy.prepend_mod_with('IssuePolicy')

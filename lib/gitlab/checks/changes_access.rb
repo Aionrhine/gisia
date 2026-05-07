@@ -36,7 +36,15 @@ module Gitlab
           bulk_access_checks!
         end
 
+        changes_access_logger.commit(status: :ok)
+
         true
+      rescue ::Gitlab::GitAccess::ForbiddenError => e
+        changes_access_logger.commit(status: :denied, error: e.class.name)
+        raise
+      rescue Gitlab::Checks::TimedLogger::TimeoutError => e
+        changes_access_logger.commit(status: :timeout, error: e.class.name)
+        raise
       end
 
       # All commits which have been newly introduced via any of the given
@@ -110,7 +118,9 @@ module Gitlab
               protocol: protocol,
               logger: logger,
               commits: commits,
-              gitaly_context: gitaly_context
+              gitaly_context: gitaly_context,
+              push_options: push_options,
+              changes_access_logger: changes_access_logger
             )
           end
       end
@@ -125,9 +135,13 @@ module Gitlab
       end
 
       def bulk_access_checks!
-        Gitlab::Checks::LfsCheck.new(self).validate!
-        Gitlab::Checks::FileSizeLimitCheck.new(self).validate!
-        Gitlab::Checks::IntegrationsCheck.new(self).validate!
+        changes_access_logger.instrument(:lfs_check) { Gitlab::Checks::LfsCheck.new(self).validate! }
+        changes_access_logger.instrument(:file_size_limit_check) do
+          Gitlab::Checks::FileSizeLimitCheck.new(self).validate!
+        end
+        changes_access_logger.instrument(:integrations_check) do
+          Gitlab::Checks::IntegrationsCheck.new(self).validate!
+        end
       end
 
       def blank_rev?(rev)
@@ -140,6 +154,14 @@ module Gitlab
       # the only refs that can contain commits.
       def commitish_ref?(ref)
         Gitlab::Git.branch_ref?(ref) || Gitlab::Git.tag_ref?(ref)
+      end
+
+      private
+
+      def changes_access_logger
+        @changes_access_logger ||= ChangesAccessLogger.new(
+          project: project
+        )
       end
     end
   end

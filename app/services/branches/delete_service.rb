@@ -51,4 +51,3 @@ module Branches
 end
 
 Branches::DeleteService.prepend_mod
-

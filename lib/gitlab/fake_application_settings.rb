@@ -60,4 +60,3 @@ module Gitlab
 end
 
 Gitlab::FakeApplicationSettings.prepend_mod_with('Gitlab::FakeApplicationSettings')
-

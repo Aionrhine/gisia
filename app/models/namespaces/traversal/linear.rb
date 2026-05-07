@@ -5,6 +5,7 @@
 # Copyright (c) GitLab Inc.
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
 # ======================================================
+
 #
 # Query a recursively defined namespace hierarchy using linear methods through
 # the traversal_ids attribute.

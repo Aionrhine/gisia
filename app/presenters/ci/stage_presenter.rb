@@ -10,7 +10,9 @@ module Ci
   class StagePresenter < Gitlab::View::Presenter::Delegated
     presents ::Ci::Stage, as: :stage
 
-    PRELOADED_RELATIONS = [:pipeline, :metadata, :tags, :job_artifacts_archive, :downstream_pipeline].freeze
+    PRELOADED_RELATIONS = [
+      :pipeline, :metadata, :job_definition, :tags, :job_artifacts_archive, :downstream_pipeline
+    ].freeze
 
     def latest_ordered_statuses
       preload_statuses(stage.statuses.latest_ordered)
@@ -23,7 +25,7 @@ module Ci
     private
 
     def preload_statuses(statuses)
-      Preloaders::CommitStatusPreloader.new(statuses).execute(PRELOADED_RELATIONS)
+      ::Ci::Preloaders::CommitStatusPreloader.new(statuses).execute(PRELOADED_RELATIONS)
 
       statuses
     end

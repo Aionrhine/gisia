@@ -51,6 +51,10 @@ module Gitlab
           }
         }
 
+        ::Gitlab::Auth::Identity.currently_linked do |identity|
+          attrs[:GlScopedUserID] = identity.scoped_user.id.to_s
+        end
+
         if authentication_context[:authentication_method] == :ci_job_token
           attrs[:GlBuildID] = authentication_context[:authentication_method_id].to_s
         end
@@ -72,7 +76,8 @@ module Gitlab
         attrs[:GitalyServer][:call_metadata].merge!(
           'user_id' => attrs[:GL_ID].presence,
           'username' => attrs[:GL_USERNAME].presence,
-          'remote_ip' => Gitlab::ApplicationContext.current_context_attribute(:remote_ip).presence
+          'remote_ip' => Gitlab::ApplicationContext.current_context_attribute(:remote_ip).presence,
+          'retry_config' => retry_config
         ).compact!
 
         attrs
@@ -150,6 +155,38 @@ module Gitlab
         [
           SEND_DATA_HEADER,
           "git-diff:#{encode(params)}"
+        ]
+      end
+
+      def send_changed_paths(repository, requests)
+        params = {
+          'GitalyServer' => gitaly_server_hash(repository),
+          'FindChangedPathsRequest' => Gitaly::FindChangedPathsRequest.new(
+            repository: repository.gitaly_repository,
+            requests: requests
+          ).to_json
+        }
+
+        [
+          SEND_DATA_HEADER,
+          "git-changed-paths:#{encode(params)}"
+        ]
+      end
+
+      def send_list_blobs(repository, revisions, bytes_limit:)
+        params = {
+          'GitalyServer' => gitaly_server_hash(repository),
+          'ListBlobsRequest' => Gitaly::ListBlobsRequest.new(
+            repository: repository.gitaly_repository,
+            revisions: revisions,
+            bytes_limit: bytes_limit,
+            with_paths: true
+          ).to_json
+        }
+
+        [
+          SEND_DATA_HEADER,
+          "git-list-blobs:#{encode(params)}"
         ]
       end
 
@@ -354,16 +391,23 @@ module Gitlab
       end
 
       def gitaly_server_hash(repository)
+        metadata = Feature::Gitaly.server_feature_flags(
+          user: ::Feature::Gitaly.user_actor,
+          repository: repository,
+          project: ::Feature::Gitaly.project_actor(repository.container),
+          group: ::Feature::Gitaly.group_actor(repository.container)
+        )
+        metadata['retry_config'] = retry_config
+
         {
           address: Gitlab::GitalyClient.address(repository.shard),
           token: Gitlab::GitalyClient.token(repository.shard),
-          call_metadata: Feature::Gitaly.server_feature_flags(
-            user: ::Feature::Gitaly.user_actor,
-            repository: repository,
-            project: ::Feature::Gitaly.project_actor(repository.container),
-            group: ::Feature::Gitaly.group_actor(repository.container)
-          )
+          call_metadata: metadata
         }
+      end
+
+      def retry_config
+        Gitlab::Json.dump(Gitlab::GitalyClient.retry_policy)
       end
 
       def gitaly_diff_or_patch_hash(repository, diff_refs)
@@ -425,3 +469,5 @@ module Gitlab
     end
   end
 end
+
+Gitlab::Workhorse.prepend_mod

@@ -4,6 +4,9 @@
 # Contains code from GitLab FOSS (MIT Licensed)
 # Copyright (c) GitLab Inc.
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
+#
+# Modifications and additions copyright (c) 2025 Liuming Tan
+# Licensed under AGPLv3 - see LICENSE file in this repository
 # ======================================================
 
 module ObjectStorage
@@ -80,6 +83,12 @@ module ObjectStorage
       credentials[:azure_storage_domain]
     end
     # End Azure-specific options
+
+    # Google-specific options
+    def universe_domain
+      credentials[:universe_domain]
+    end
+    # End Google-specific options
 
     def google?
       provider == GOOGLE_PROVIDER

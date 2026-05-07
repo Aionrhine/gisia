@@ -37,25 +37,24 @@ class NotificationRecipient
 
   def notifiable?
     return false if composite_identity_enforced?
-    return false unless has_access?
+    return false unless user.can?(:receive_notifications)
     return false if emails_disabled?
     return false if own_activity?
-
-    # even users with :disabled notifications receive manual subscriptions
-    return !unsubscribed? if @type == :subscription
 
     return false unless suitable_notification_level?
     return false if email_blocked?
 
-    # check this last because it's expensive
+    has_access?
+  end
+
+  def suitable_notification_level?
+    # even users with :disabled notifications receive manual subscriptions
+    return !unsubscribed? if @type == :subscription
+
     # nobody should receive notifications if they've specifically unsubscribed
     # except if they were mentioned.
     return false if @type != :mention && unsubscribed?
 
-    true
-  end
-
-  def suitable_notification_level?
     case notification_level
     when :mention
       @type == :mention
@@ -74,10 +73,23 @@ class NotificationRecipient
     return false unless @custom_action
     return false unless notification_setting
 
-    notification_setting.event_enabled?(@custom_action) ||
-      # fixed_pipeline is a subset of success_pipeline event
-      (@custom_action == :fixed_pipeline &&
-       notification_setting.event_enabled?(:success_pipeline))
+    # 1. Check if the exact action is enabled
+    return true if notification_setting.event_enabled?(@custom_action)
+
+    # 2. Fallback logic: work_item and epic events --> issue events
+    #    This allows all work items (tasks, tickets, epics) to use issue notification settings
+    #    until we have dedicated work_item/epic events in EMAIL_EVENTS.
+    #    - work_item events (new_work_item, close_work_item, etc.) fallback to issue equivalents
+    #    - epic events (new_epic, close_epic, etc.) also fallback to issue equivalents
+    fallback_action = @custom_action.to_s
+      .sub('work_item', 'issue')
+      .sub('epic', 'issue')
+      .to_sym
+
+    return true if fallback_action != @custom_action && notification_setting.event_enabled?(fallback_action)
+
+    # 3. Special case: fixed_pipeline is a subset of success_pipeline event
+    @custom_action == :fixed_pipeline && notification_setting.event_enabled?(:success_pipeline)
   end
 
   def unsubscribed?
@@ -89,6 +101,7 @@ class NotificationRecipient
     subscription = subscribable_target.subscriptions.find { |subscription| subscription.user_id == @user.id }
     subscription && !subscription.subscribed
   end
+  strong_memoize_attr :unsubscribed?
 
   def own_activity?
     return false unless @acting_user
@@ -112,7 +125,6 @@ class NotificationRecipient
 
   def has_access?
     DeclarativePolicy.subject_scope do
-      break false unless user.can?(:receive_notifications)
       break true if @skip_read_ability
 
       if @project
@@ -199,4 +211,3 @@ class NotificationRecipient
     %i[participating mention].include?(@type)
   end
 end
-

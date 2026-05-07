@@ -6,8 +6,6 @@
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
 # ======================================================
 
-require 'stringio'
-
 # A module to check CSRF tokens in requests.
 # It's used in API helpers and OmniAuth.
 # Usage: GitLab::RequestForgeryProtection.call(env)
@@ -40,7 +38,7 @@ module Gitlab
 
     def self.verified?(env)
       minimal_env = env.slice('REQUEST_METHOD', 'rack.session', 'HTTP_X_CSRF_TOKEN')
-                      .merge('rack.input' => StringIO.new(''))
+                      .merge('rack.input' => '')
 
       # The CSRF token for some requests is in the form instead of headers.
       # This line of code is used to accommodate this situation. See: https://gitlab.com/gitlab-org/gitlab/-/issues/443398

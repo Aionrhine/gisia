@@ -20,6 +20,7 @@ class Repository
   REF_ENVIRONMENTS = 'environments'
   REF_PIPELINES = 'pipelines'
   REF_TMP = 'tmp'
+  REF_WORKLOADS = 'workloads'
 
   ARCHIVE_CACHE_TIME = 60 # Cache archives referred to by a (mutable) ref for 1 minute
   ARCHIVE_CACHE_TIME_IMMUTABLE = 3600 # Cache archives referred to by an immutable reference for 1 hour
@@ -38,11 +39,11 @@ class Repository
   FORMAT_SHA256 = 'sha256'
 
   include Gitlab::RepositoryCacheAdapter
-  include Repositories::HasTags
 
   attr_accessor :full_path, :shard, :disk_path, :container, :repo_type
 
   delegate :lfs_enabled?, to: :container
+  delegate :run_after_commit_or_now, to: :container
 
   delegate_missing_to :raw_repository
 
@@ -158,8 +159,8 @@ class Repository
       repo: raw_repository,
       ref: ref,
       path: opts[:path],
-      author: opts[:author],
-      follow: Array(opts[:path]).length == 1 && Feature.disabled?(:remove_file_commit_history_following, type: :ops),
+      author: expand_author_with_user_emails(opts[:author]),
+      follow: determine_follow_option(opts),
       limit: opts[:limit],
       offset: opts[:offset],
       skip_merges: !!opts[:skip_merges],
@@ -209,20 +210,25 @@ class Repository
     committed_after: nil,
     pagination_params: { page_token: nil, limit: 1000 }
   )
-    return [] unless exists? && has_visible_content? && ref.present?
+    return empty_commit_collection_with_next_cursor unless exists? && has_visible_content? && ref.present?
 
     pagination_params[:limit] ||= 1000
 
-    raw_commits = raw_repository.list_commits(
+    response = raw_repository.list_commits(
       ref: ref,
       query: query,
-      author: author,
+      author: expand_author_with_user_emails(author),
       committed_before: committed_before,
       committed_after: committed_after,
       pagination_params: pagination_params
     )
-    commits = raw_commits.map { |c| commit(c) }
-    CommitCollection.new(container, commits, ref)
+
+    Repositories::CommitCollectionWithNextCursor.new(
+      container,
+      response.map { |c| commit(c) },
+      ref,
+      next_cursor: response.next_cursor
+    )
   end
 
   def find_branch(name)
@@ -279,13 +285,15 @@ class Repository
     end
   end
 
-  def add_branch(user, branch_name, ref, expire_cache: true, skip_ci: false)
+  def add_branch(user, branch_name, ref, expire_cache: true, skip_ci: false, raise_on_invalid_ref: false)
     branch = raw_repository.add_branch(branch_name, user: user, target: ref, skip_ci: skip_ci)
 
     after_create_branch(expire_cache: expire_cache)
 
     branch
-  rescue Gitlab::Git::Repository::InvalidRef
+  rescue Gitlab::Git::Repository::InvalidRef => e
+    raise e if raise_on_invalid_ref
+
     false
   end
 
@@ -317,14 +325,45 @@ class Repository
     branch_names + tag_names
   end
 
+  def lazy_ref_exists?(ref_name)
+    BatchLoader.for(ref_name).batch(key: self) do |ref_names, loader, _args|
+      # Make a single Gitaly call to check all refs at once
+      existing_refs = list_refs(ref_names).to_h { |r| [Gitlab::Git.ref_name(r.name, types: nil), true] }
+
+      # Load results for each requested ref
+      ref_names.each do |ref|
+        loader.call(ref, existing_refs.key?(ref))
+      end
+    end
+  end
+
   def branch_exists?(branch_name)
     return false unless raw_repository
+
+    if Feature.enabled?(:ref_existence_check_gitaly, project)
+      return false unless exists?
+      return false if branch_name.blank?
+
+      # Optimization: Use a root_ref cache to check the presence of the default branch
+      return true if branch_name == root_ref
+
+      Gitlab::Git::RefPreloader.preload_refs_for_project(project)
+
+      return lazy_ref_exists?(Gitlab::Git::BRANCH_REF_PREFIX + branch_name).itself
+    end
 
     branch_names_include?(branch_name)
   end
 
   def tag_exists?(tag_name)
     return false unless raw_repository
+
+    if Feature.enabled?(:ref_existence_check_gitaly, project)
+      return false unless exists?
+      return false if tag_name.blank?
+
+      return lazy_ref_exists?(Gitlab::Git::TAG_REF_PREFIX + tag_name).itself
+    end
 
     tag_names_include?(tag_name)
   end
@@ -374,12 +413,14 @@ class Repository
 
   def expire_tags_cache
     expire_method_caches(%i[tag_names tag_count has_ambiguous_refs?])
+    BatchLoader::Executor.clear_current if Feature.enabled?(:ref_existence_check_gitaly, project)
     @tags = nil
     @tag_names_include = nil
   end
 
   def expire_branches_cache
     expire_method_caches(%i[branch_names merged_branch_names branch_count has_visible_content? has_ambiguous_refs?])
+    BatchLoader::Executor.clear_current if Feature.enabled?(:ref_existence_check_gitaly, project)
     expire_protected_branches_cache
 
     @local_branches = nil
@@ -397,10 +438,6 @@ class Repository
 
   def expire_all_method_caches
     expire_method_caches(CACHED_METHODS)
-  end
-
-  def expire_avatar_cache
-    expire_method_caches(%i[avatar])
   end
 
   # Refreshes the method caches of this repository.
@@ -477,6 +514,8 @@ class Repository
     expire_status_cache
 
     repository_event(:create_repository)
+
+    container.after_create_repository
   end
 
   # Runs code just before a repository is deleted.
@@ -554,7 +593,10 @@ class Repository
 
   # Runs code after an existing branch has been removed.
   def after_remove_branch(expire_cache: true)
-    expire_branches_cache if expire_cache
+    if expire_cache
+      expire_branches_cache
+      expire_root_ref_cache
+    end
   end
 
   def lookup(sha)
@@ -615,21 +657,21 @@ class Repository
   cache_method :recent_objects_size, fallback: 0.0
 
   def commit_count
-    root_ref ? raw_repository.commit_count(root_ref) : 0
+    root_ref ? raw_repository.count_commits(revisions: root_ref) : 0
   end
   cache_method :commit_count, fallback: 0
 
   def commit_count_for_ref(ref)
     return 0 unless exists?
 
-    cache.fetch(:"commit_count_#{ref}") { raw_repository.commit_count(ref) }
+    cache.fetch(:"commit_count_#{ref}") { raw_repository.count_commits(revisions: ref) }
   end
 
   delegate :branch_names, to: :raw_repository
-  cache_method_as_redis_set :branch_names, fallback: []
+  cache_method_as_redis_set :branch_names, fallback: [], avoid_cache: -> { Feature.enabled?(:avoid_branch_names_cache, project) }
 
   delegate :tag_names, to: :raw_repository
-  cache_method_as_redis_set :tag_names, fallback: []
+  cache_method_as_redis_set :tag_names, fallback: [], avoid_cache: -> { Feature.enabled?(:avoid_tag_names_cache, project) }
 
   delegate :branch_count, :tag_count, :has_visible_content?, to: :raw_repository
   cache_method :branch_count, fallback: 0
@@ -744,11 +786,9 @@ class Repository
   end
 
   def list_last_commits_for_tree(sha, path, offset: 0, limit: 25, literal_pathspec: false)
-    commits = raw_repository.list_last_commits_for_tree(sha, path, offset: offset, limit: limit, literal_pathspec: literal_pathspec)
-
-    commits.each do |path, commit|
-      commits[path] = ::Commit.new(commit, container)
-    end
+    raw_repository
+      .list_last_commits_for_tree(sha, path, offset: offset, limit: limit, literal_pathspec: literal_pathspec)
+      .transform_values { |commit| ::Commit.new(commit, container) }
   end
 
   def last_commit_for_path(sha, path, literal_pathspec: false)
@@ -812,7 +852,7 @@ class Repository
   end
 
   def health(generate)
-    cache.fetch(:health) do
+    cache.fetch_without_caching_false(:health) do
       if generate
         info = raw_repository.repository_info
 
@@ -890,13 +930,6 @@ class Repository
     end
   end
 
-  def move_dir_files(user, path, previous_path, **options)
-    actions = move_dir_files_actions(path, previous_path, branch_name: options[:branch_name])
-    return if actions.blank?
-
-    commit_files(user, **options.merge(actions: actions))
-  end
-
   def delete_file(user, path, **options)
     options[:actions] = [{ action: :delete, file_path: path }]
 
@@ -950,7 +983,8 @@ class Repository
         source_sha: source_sha,
         target_branch: target_branch,
         message: message,
-        target_sha: target_sha
+        target_sha: target_sha,
+        sign: sign_commits?
       ) do |commit_id|
         yield commit_id if block_given?
       end
@@ -959,6 +993,17 @@ class Repository
 
   def delete_refs(...)
     raw.delete_refs(...)
+  end
+
+  def merge_to_ref(user, source_sha:, branch:, target_ref:, message:, first_parent_ref:, expected_old_oid: '')
+    raw.merge_to_ref(user,
+      source_sha: source_sha,
+      branch: branch,
+      target_ref: target_ref,
+      message: message,
+      first_parent_ref: first_parent_ref,
+      expected_old_oid: expected_old_oid,
+      sign: sign_commits?)
   end
 
   def ff_merge(user, source, target_branch, target_sha: nil, merge_request: nil)
@@ -980,6 +1025,8 @@ class Repository
     user, commit, branch_name, message,
     start_branch_name: nil, start_project: project, dry_run: false
   )
+    target_sha = find_branch(branch_name)&.dereferenced_target&.id if branch_name.present?
+
     with_cache_hooks do
       raw_repository.revert(
         user: user,
@@ -988,7 +1035,9 @@ class Repository
         message: message,
         start_branch_name: start_branch_name,
         start_repository: start_project.repository.raw_repository,
-        dry_run: dry_run
+        dry_run: dry_run,
+        target_sha: target_sha,
+        sign: sign_commits?
       )
     end
   end
@@ -1011,7 +1060,8 @@ class Repository
         author_name: author_name,
         author_email: author_email,
         dry_run: dry_run,
-        target_sha: target_sha
+        target_sha: target_sha,
+        sign: sign_commits?
       )
     end
   end
@@ -1120,10 +1170,13 @@ class Repository
     # We need to use RE2 to match Gitaly's regexp engine
     regexp_string = RE2::Regexp.escape(path)
 
-    anything = '.*?'
-    anything_but_not_slash = '([^\/])*?'
-    regexp_string.gsub!('\*\*', anything)
-    regexp_string.gsub!('\*', anything_but_not_slash)
+    any_directories_or_root = '(.*?\/)?'
+    any_characters = '.*?'
+    any_characters_except_slash = '([^\/])*?'
+
+    regexp_string.gsub!('\*\*\/', any_directories_or_root)
+    regexp_string.gsub!('\*\*', any_characters)
+    regexp_string.gsub!('\*', any_characters_except_slash)
 
     raw_repository.search_files_by_regexp("^#{regexp_string}$", ref)
   end
@@ -1166,6 +1219,10 @@ class Repository
     raw_repository.fetch_ref(source_repository.raw_repository, source_ref: source_ref, target_ref: target_ref)
   end
 
+  def fork_from(source_repository, branch = nil)
+    raw_repository.fork_repository(source_repository.raw_repository, branch)
+  end
+
   def rebase(user, merge_request, skip_ci: false)
     push_options = []
     push_options << Gitlab::PushOptions::CI_SKIP if skip_ci
@@ -1192,8 +1249,44 @@ class Repository
       start_sha: merge_request.diff_start_sha,
       end_sha: merge_request.diff_head_sha,
       author: merge_request.author,
-      message: message
+      message: message,
+      sign: sign_commits?
     )
+  end
+
+  # Squashes commits between start_sha and end_sha into a single commit.
+  # Unlike #squash which takes a merge_request, this method takes explicit SHAs.
+  #
+  # NOTE: This method is similar to #squash but takes explicit SHAs instead of
+  # a merge request. If you modify #squash, consider if this method needs the
+  # same changes (e.g., adding caching, metrics, or hooks).
+  #
+  # @param user [User] The user performing the squash
+  # @param start_sha [String] The SHA to use as parent of the squashed commit
+  # @param end_sha [String] The SHA whose tree will be used for the squashed commit
+  # @param message [String] Commit message for the squashed commit
+  # @return [String] The SHA of the new squashed commit
+  def squash_commits(user, start_sha:, end_sha:, message:)
+    raw.squash(
+      user,
+      start_sha: start_sha,
+      end_sha: end_sha,
+      author: user,
+      message: message,
+      sign: sign_commits?
+    )
+  end
+
+  # Returns the initial commit (first commit with no parents) for the given ref
+  #
+  # @param ref [String] The reference to start from (default: default branch)
+  # @return [Commit, nil]
+  def initial_commit(ref = nil)
+    ref ||= root_ref
+    return unless ref
+
+    git_commit = raw_repository.initial_commit(ref)
+    ::Commit.new(git_commit, container) if git_commit
   end
 
   def submodule_links
@@ -1242,12 +1335,6 @@ class Repository
     end
   end
 
-  def blobs_metadata(paths, ref = 'HEAD')
-    references = Array.wrap(paths).map { |path| [ref, path] }
-
-    Gitlab::Git::Blob.batch_metadata(raw, references).map { |raw_blob| Blob.decorate(raw_blob) }
-  end
-
   def project
     if container.is_a?(Project)
       container
@@ -1285,7 +1372,7 @@ class Repository
     patterns = [Gitlab::Git::BRANCH_REF_PREFIX, Gitlab::Git::TAG_REF_PREFIX]
 
     prohibited_refs = raw_repository.list_refs(patterns).select do |ref|
-      ref.name.match(Gitlab::Git::SHA_LIKE_REF)
+      prohibited_ref?(ref.name)
     end
 
     return if prohibited_refs.blank?
@@ -1377,7 +1464,63 @@ class Repository
       end
   end
 
+  # Update ref cache incrementally for a single ref change.
+  # @param ref [String] Full ref path (e.g., "refs/heads/main")
+  # @param deleted [Boolean] Whether the ref was deleted
+  def incremental_ref_cache_update(ref, deleted)
+    return unless Feature.enabled?(:ref_cache_with_rebuild_queue, project)
+
+    if Gitlab::Git.tag_ref?(ref)
+      cache_key = 'tag_names'
+    elsif Gitlab::Git.branch_ref?(ref)
+      cache_key = 'branch_names'
+    else
+      return
+    end
+
+    redis_set_cache.handle_ref_change(cache_key, ref, deleted)
+    clear_memoization(cache_key)
+  end
+
   private
+
+  def expand_author_with_user_emails(author)
+    return author if author.blank?
+
+    users = User.by_name(author).or(User.by_username(author))
+                .with_emails
+                .limit(10)
+
+    return author if users.empty?
+
+    emails = users.flat_map { |user| user.verified_emails(include_private_email: true) }.uniq
+    return author if emails.empty?
+
+    (emails.map { |e| Regexp.escape(e) } + [Regexp.escape(author)]).join('\|')
+  end
+
+  # A ref is prohibited if its name matches a SHA-like pattern
+  # or if, after stripping the refs/heads/ or refs/tags/ prefix,
+  # the branch/tag name fails GitRefValidator validation (e.g. names
+  # starting with refs/heads/ which create ambiguous nested refs
+  # like refs/heads/refs/heads/main).
+  def prohibited_ref?(ref_name)
+    return true if ref_name.match?(Gitlab::Git::SHA_LIKE_REF)
+
+    short_name = Gitlab::Git.ref_name(ref_name)
+    !Gitlab::GitRefValidator.validate(short_name)
+  end
+
+  def determine_follow_option(opts)
+    return false unless Array(opts[:path]).length == 1
+    return opts[:follow] unless opts[:follow].nil?
+
+    Feature.disabled?(:remove_file_commit_history_following, type: :ops)
+  end
+
+  def empty_commit_collection_with_next_cursor
+    Repositories::CommitCollectionWithNextCursor.new(container, [], nil)
+  end
 
   # Increase the limit by number of excluded refs
   # to prevent a situation when we return less refs than requested
@@ -1412,7 +1555,11 @@ class Repository
   end
 
   def redis_set_cache
-    @redis_set_cache ||= Gitlab::RepositorySetCache.new(self)
+    @redis_set_cache ||= if Feature.enabled?(:ref_cache_with_rebuild_queue, project)
+                           Gitlab::Repositories::RebuildableSetCache.new(self)
+                         else
+                           Gitlab::RepositorySetCache.new(self)
+                         end
   end
 
   def redis_hash_cache
@@ -1424,6 +1571,7 @@ class Repository
   end
 
   def repository_event(event, tags = {})
+    Gitlab::Metrics.add_event(event, tags)
   end
 
   def initialize_raw_repository
@@ -1437,7 +1585,7 @@ class Repository
   end
 
   def sign_commits?
-    true
+    ::Repositories::WebBasedCommitSigningSetting.new(self).sign_commits?
   end
 end
 

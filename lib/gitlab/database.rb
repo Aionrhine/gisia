@@ -28,6 +28,8 @@ module Gitlab
     # https://www.postgresql.org/docs/9.2/static/datatype-numeric.html
     MAX_INT_VALUE = 2147483647
     MIN_INT_VALUE = -2147483648
+    MAX_BIGINT_VALUE = 9223372036854775807
+    MIN_BIGINT_VALUE = -9223372036854775808
     MAX_SMALLINT_VALUE = 32767
 
     # The max value between MySQL's TIMESTAMP and PostgreSQL's timestampz:
@@ -60,6 +62,7 @@ module Gitlab
     MODE_MULTIPLE_DATABASES = "multiple-databases"
 
     MAX_INDEXES_ALLOWED_PER_TABLE = 15
+    MAX_INDEX_NAME_LENGTH = 63
 
     def self.all_database_connection_files
       Dir.glob(Rails.root.join("db/database_connections/*.yaml"))
@@ -233,6 +236,16 @@ module Gitlab
       MAX_TIMESTAMP_VALUE > timestamp ? timestamp : MAX_TIMESTAMP_VALUE.dup
     end
 
+    # We use ApplicationRecord here but these quoting helpers can be used on any query fragment
+    # since all our databases use the same PostgreSQL adapter
+    def self.quote_table_name(table_name)
+      ApplicationRecord.adapter_class.quote_table_name(table_name)
+    end
+
+    def self.quote_column_name(column_name)
+      ApplicationRecord.adapter_class.quote_column_name(column_name)
+    end
+
     def self.all_uncached(&block)
       # Calls to #uncached only disable caching for the current connection. Since the load balancer
       # can potentially upgrade from read to read-write mode (using a different connection), we specify
@@ -304,27 +317,7 @@ module Gitlab
     end
 
     def self.db_config_for_connection(connection)
-      return unless connection
-
-      # For a ConnectionProxy we want to avoid ambiguous db_config as it may
-      # sometimes default to replica so we always return the primary config
-      # instead.
-      if connection.is_a?(::Gitlab::Database::LoadBalancing::ConnectionProxy)
-        return connection.load_balancer.configuration.db_config
-      end
-
-      # During application init we might receive `NullPool`
-      return unless connection.respond_to?(:pool) &&
-        connection.pool.respond_to?(:db_config)
-
-      db_config = connection.pool.db_config
-      db_config unless empty_config?(db_config)
-    end
-
-    def self.empty_config?(db_config)
-      return true unless db_config
-
-      db_config.is_a?(ActiveRecord::ConnectionAdapters::NullPool::NullConfig)
+      Gitlab::Database::LoadBalancing.db_config_for_connection(connection)
     end
 
     # At the moment, the connection can only be retrieved by
@@ -342,6 +335,15 @@ module Gitlab
     def self.db_config_database(connection)
       db_config = db_config_for_connection(connection)
       db_config&.database || 'unknown'
+    end
+
+    def self.column_type(connection, table_name, column_name)
+      return unless connection
+
+      connection.select_value(
+        "SELECT typname FROM pg_attribute INNER JOIN pg_type ON pg_attribute.atttypid = pg_type.oid " \
+          "WHERE attname = #{connection.quote(column_name)} AND attrelid = #{connection.quote(table_name)}::regclass"
+      )
     end
 
     # If the `database_tasks: false` is being used,

@@ -28,6 +28,10 @@ module Gitlab
       loggers.each { |logger| logger.build.info(message) }
     end
 
+    def self.add(*args, &block)
+      loggers.each { |logger| logger.build.add(*args, &block) }
+    end
+
     def self.read_latest
       primary_logger.read_latest
     end

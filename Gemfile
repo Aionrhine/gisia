@@ -1,13 +1,13 @@
 source 'https://rubygems.org'
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem 'rails', '~> 8.0.4'
+gem 'rails', '~> 8.0.4.1'
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem 'propshaft'
 # Use postgresql as the database for Active Record
-gem 'pg', '~> 1.5.6'
+gem 'pg', '~> 1.6.1'
 # Use the Puma web server [https://github.com/puma/puma]
-gem 'puma', '>= 6.6.0'
+gem 'puma', '>= 7.2'
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
 gem 'importmap-rails'
 # Hotwire's SPA-like page accelerator [https://turbo.hotwired.dev]
@@ -29,9 +29,9 @@ gem 'gitlab-markup', '~> 2.0.0', require: 'github/markup'
 gem 'commonmarker', '~> 0.23.10'
 gem 'kramdown', '~> 2.5.0'
 gem 'sanitize', '~> 6.0.2'
-gem 'gitlab-glfm-markdown', '~> 0.0.33'
+gem 'gitlab-glfm-markdown', '~> 0.0.41'
 gem 'html-pipeline', '~> 2.14.3'
-gem 'rouge', '~> 4.6.0'
+gem 'rouge', '~> 4.7.0'
 
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
@@ -79,8 +79,8 @@ gem 'attr_encrypted', '~> 4.2'
 gem 'gitlab-safe_request_store', path: 'gems/gitlab-safe_request_store'
 gem 'gitlab-utils', path: 'gems/gitlab-utils'
 
-gem 'gitaly', '~> 18.2.0'
-gem 'gitlab-labkit', '~> 0.39.0'
+gem 'gitaly', '~> 18.10.0'
+gem 'gitlab-labkit', '~> 1.5.0'
 gem 'gitlab-net-dns', '~> 0.15.0'
 
 # Parse time & duration
@@ -88,7 +88,7 @@ gem 'gitlab-chronic', '~> 0.10.5'
 gem 'gitlab_chronic_duration', '~> 0.12'
 
 gem 'google-protobuf', '~> 3.25', '>= 3.25.3'
-gem 'grpc', '= 1.74.0'
+gem 'grpc', '= 1.80.0'
 
 gem 'charlock_holmes', '~> 0.7.9'
 gem 'licensee', '~> 9.16'
@@ -96,7 +96,7 @@ gem 're2', '~> 2.15'
 gem 'ssh_data', '~> 2.0'
 
 gem 'connection_pool', '~> 2.5.3'
-gem 'redis', '~> 5.4.0'
+gem 'redis', '~> 5.4.1'
 gem 'redis-actionpack', '~> 5.5.0'
 gem 'redis-client', '~> 0.25'
 gem 'redis-cluster-client', '~> 0.13'
@@ -104,9 +104,9 @@ gem 'redis-clustering', '~> 5.4.0'
 
 gem 'sidekiq', '~> 7.3', '>= 7.3.9'
 
-gem 'declarative_policy', '~> 1.1.0'
+gem 'declarative_policy', '~> 2.1.0'
 gem 'rugged', '~> 1.9'
-gem 'state_machines-activerecord', '~> 0.9.0'
+gem 'state_machines-activerecord', '~> 0.100.0'
 
 # todo, config for sidekiq
 gem 'batch-loader', '~> 2.0.5'
@@ -129,14 +129,14 @@ gem 'hamlit', '~> 3.0.0'
 # gem 'flipper-active_record', '~> 1.3', '>= 1.3.3'
 # gem 'flipper-active_support_cache_store', '~> 1.3', '>= 1.3.3'
 # gem 'unleash', '~> 6.1', '>= 6.1.2'
-gem 'gitlab-experiment', '~> 0.9.1'
+gem 'gitlab-experiment', '~> 1.3.0'
 
 # for backups
 gem 'fog-aws', '~> 3.26'
 # Locked until fog-google resolves https://github.com/fog/fog-google/issues/421.
 # Also see config/initializers/fog_core_patch.rb.
-gem 'fog-core', '= 2.1.0'
-gem 'fog-google', '~> 1.24.1', require: 'fog/google'
+gem 'fog-core', '~> 2.5'
+gem 'fog-google', '~> 1.29.0', require: 'fog/google'
 gem 'fog-local', '~> 0.8'
 # NOTE:
 # the fog-aliyun gem since v0.4 pulls in aliyun-sdk transitively, which monkey-patches
@@ -145,7 +145,7 @@ gem 'fog-local', '~> 0.8'
 # We may want to update this dependency if this is ever addressed upstream, e.g. via
 # https://github.com/aliyun/aliyun-oss-ruby-sdk/pull/93
 gem 'fog-aliyun', '~> 0.4'
-gem 'gitlab-fog-azure-rm', '~> 2.2.0', require: 'fog/azurerm'
+gem 'gitlab-fog-azure-rm', '~> 2.4.0', require: 'fog/azurerm'
 
 gem 'rubyzip', '~> 2.4.0', require: 'zip'
 
@@ -185,7 +185,7 @@ end
 group :test do
   gem 'retest', '2.4.0'
   gem 'shoulda-matchers', '~> 6.5'
-  gem 'test-prof', '~> 1.4', '>= 1.4.4'
+  gem 'test-prof', '~> 1.6'
   gem 'capybara', '~> 3.40'
   gem 'cuprite', '~> 0.17'
 end

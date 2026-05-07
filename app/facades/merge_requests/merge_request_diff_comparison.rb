@@ -27,4 +27,3 @@ module MergeRequests
     attr_reader :merge_request_diff, :project
   end
 end
-

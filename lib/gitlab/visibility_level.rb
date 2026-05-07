@@ -18,11 +18,15 @@ module Gitlab
     included do
       scope :public_only,               -> { where(visibility_level: PUBLIC) }
       scope :public_and_internal_only,  -> { where(visibility_level: [PUBLIC, INTERNAL]) }
-      scope :internal_only, -> { where(visibility_level: INTERNAL) }
       scope :private_only,              -> { where(visibility_level: PRIVATE) }
       scope :non_public_only,           -> { where.not(visibility_level: PUBLIC) }
+
       scope :public_to_user, ->(user = nil) do
         where(visibility_level: VisibilityLevel.levels_for_user(user))
+      end
+
+      scope :by_visibility_level, ->(levels) do
+        where(visibility_level: levels)
       end
 
       alias_method :visibility_level=, :visibility=
@@ -31,17 +35,20 @@ module Gitlab
     PRIVATE  = 0 unless const_defined?(:PRIVATE)
     INTERNAL = 10 unless const_defined?(:INTERNAL)
     PUBLIC   = 20 unless const_defined?(:PUBLIC)
+    LEVELS_FOR_ADMINS = [PRIVATE, INTERNAL, PUBLIC].freeze
 
     class << self
       delegate :values, to: :options
 
-      def levels_for_user(user = nil)
+      def levels_for_user(user = nil, include_private: false)
         return [PUBLIC] unless user
 
         if user.can_read_all_resources?
-          [PRIVATE, INTERNAL, PUBLIC]
+          LEVELS_FOR_ADMINS
         elsif user.external?
           [PUBLIC]
+        elsif include_private
+          [INTERNAL, PUBLIC, PRIVATE]
         else
           [INTERNAL, PUBLIC]
         end
@@ -53,9 +60,9 @@ module Gitlab
 
       def options
         {
-          'Private' => PRIVATE,
-          'Internal' => INTERNAL,
-          'Public' => PUBLIC
+          s_('VisibilityLevel|Private') => PRIVATE,
+          s_('VisibilityLevel|Internal') => INTERNAL,
+          s_('VisibilityLevel|Public') => PUBLIC
         }
       end
 
@@ -81,7 +88,9 @@ module Gitlab
       end
 
       def allowed_for?(user, level)
-        user.admin? || allowed_level?(level.to_i)
+        return true if user.can_admin_all_resources?
+
+        allowed_level?(level.to_i)
       end
 
       # Level should be a numeric value, e.g. `20`
@@ -131,7 +140,7 @@ module Gitlab
       end
 
       def level_name(level)
-        options.key(level.to_i) || 'Unknown'
+        options.key(level.to_i) || s_('VisibilityLevel|Unknown')
       end
 
       def level_value(level, fallback_value: PRIVATE)
@@ -162,7 +171,7 @@ module Gitlab
     end
 
     def visibility_level_value
-      send visibility_level_field
+      self[visibility_level_field]
     end
 
     def visibility
@@ -191,7 +200,7 @@ module Gitlab
 
     def visibility_level_attributes
       [visibility_level_field, visibility_level_field.to_s,
-       :visibility, 'visibility']
+        :visibility, 'visibility']
     end
   end
 end

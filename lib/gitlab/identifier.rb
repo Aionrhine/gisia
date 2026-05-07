@@ -6,8 +6,8 @@
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
 # ======================================================
 
-# Detect user or keys based on identifier like
-# key-13 or user-36
+# Detect user, keys, or deploy tokens based on identifier like
+# key-13, user-36, or deploy-token-45
 module Gitlab
   module Identifier
     def identify(identifier)
@@ -19,6 +19,8 @@ module Gitlab
         # git push over ssh. will not return a user for deploy keys.
         # identify_using_deploy_key instead.
         identify_using_ssh_key(identifier)
+      when /\Adeploy-token-\d+\Z/
+        identify_using_deploy_token(identifier)
       end
     end
 
@@ -32,6 +34,15 @@ module Gitlab
       end
     end
     # rubocop: enable CodeReuse/ActiveRecord
+
+    # Tries to identify a deploy token based on a deploy token identifier (e.g. "deploy-token-123").
+    def identify_using_deploy_token(identifier)
+      token_id = identifier.gsub("deploy-token-", "")
+
+      identify_with_cache(:deploy_token, token_id) do
+        DeployToken.find_by_id(token_id)
+      end
+    end
 
     # Tries to identify a user based on an SSH key identifier (e.g. "key-123"). Deploy keys are excluded.
     def identify_using_ssh_key(identifier)
@@ -61,7 +72,8 @@ module Gitlab
       @identification_cache ||= {
         email: {},
         user: {},
-        ssh_key: {}
+        ssh_key: {},
+        deploy_token: {}
       }
     end
   end

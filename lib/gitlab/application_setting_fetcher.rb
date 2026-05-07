@@ -42,7 +42,7 @@ module Gitlab
         # need to be added to the application settings. To prevent Rake tasks
         # and other callers from failing, use any loaded settings and return
         # defaults for missing columns.
-        if Gitlab::Runtime.rake? && ::ApplicationSetting.connection.migration_context.needs_migration?
+        if Gitlab::Runtime.rake? && needs_migration?
           db_attributes = current_settings&.attributes || {}
           fake_application_settings(db_attributes)
         elsif current_settings.present?
@@ -52,6 +52,10 @@ module Gitlab
         end
       rescue ::ApplicationSetting::Recursion
         in_memory_application_settings
+      end
+
+      def needs_migration?
+        ::ApplicationSetting.connection_pool.migration_context.needs_migration?
       end
 
       def in_memory_application_settings
@@ -78,4 +82,3 @@ module Gitlab
     end
   end
 end
-

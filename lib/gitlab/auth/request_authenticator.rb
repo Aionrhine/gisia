@@ -20,7 +20,7 @@ module Gitlab
       end
 
       def find_authenticated_requester(request_formats)
-        user(request_formats) || deploy_token_from_request
+        deploy_token_from_request || user(request_formats)
       end
 
       def user(request_formats)
@@ -35,6 +35,12 @@ module Gitlab
 
       def runner
         find_runner_from_token
+      rescue Gitlab::Auth::AuthenticationError
+        nil
+      end
+
+      def job_from_token
+        find_job_from_job_token
       rescue Gitlab::Auth::AuthenticationError
         nil
       end
@@ -65,6 +71,10 @@ module Gitlab
         true
       rescue Gitlab::Auth::AuthenticationError
         false
+      end
+
+      def current_token_scopes
+        access_token&.scopes.to_a
       end
 
       private

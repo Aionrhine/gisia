@@ -18,6 +18,7 @@
 - api
 - api_security
 - application_instrumentation
+- artifact_registry
 - artifact_security
 - attack_emulation
 - audit_events
@@ -27,7 +28,6 @@
 - capacity_planning
 - cell
 - ci_scaling
-- ci_variables
 - cloud_native_installation
 - code_quality
 - code_review_workflow
@@ -56,9 +56,10 @@
 - devops_reports
 - disaster_recovery
 - dora_metrics
+- duo_agent_platform
 - duo_chat
+- duo_code_review
 - duo_setting
-- duo_workflow
 - durability_metrics
 - dynamic_application_security_testing
 - editor_extensions
@@ -72,6 +73,7 @@
 - git
 - gitaly
 - gitlab_cli
+- gitlab_docs
 - global_search
 - groups_and_projects
 - helm_chart_registry
@@ -116,7 +118,7 @@
 - release_orchestration
 - requirements_management
 - review_apps
-- runner
+- runner_core
 - runway
 - scalability
 - seat_cost_management
@@ -138,6 +140,7 @@
 - switchboard
 - system_access
 - team_planning
+- tenant_scale_metrics
 - text_editors
 - user_management
 - user_profile

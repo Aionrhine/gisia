@@ -6,6 +6,7 @@
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
 # ======================================================
 
+#
 # Used by NotificationService to determine who should receive notification
 #
 module NotificationRecipients
@@ -45,4 +46,3 @@ module NotificationRecipients
 end
 
 NotificationRecipients::BuildService.prepend_mod
-

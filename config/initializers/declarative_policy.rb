@@ -4,6 +4,9 @@
 # Contains code from GitLab FOSS (MIT Licensed)
 # Copyright (c) GitLab Inc.
 # See .licenses/Gisia/others/gitlab-foss.dep.yml for full license
+#
+# Modifications and additions copyright (c) 2025 Liuming Tan
+# Licensed under AGPLv3 - see LICENSE file in this repository
 # ======================================================
 
 require 'declarative_policy'
@@ -30,10 +33,9 @@ module ClassForClassCache
     end
   end
 end
-
 Rails.application.config.to_prepare do
   DeclarativePolicy.configure do
-    named_policy :global, GlobalPolicy
+    named_policy :global, ::GlobalPolicy
   end
 end
 
