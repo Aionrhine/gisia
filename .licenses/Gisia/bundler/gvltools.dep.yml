@@ -1,19 +1,16 @@
 ---
-name: declarative_policy
-version: 2.1.0
+name: gvltools
+version: 0.4.0
 type: bundler
-summary: An authorization library with a focus on declarative policy definitions.
-homepage: https://gitlab.com/gitlab-org/ruby/gems/declarative-policy
-license: other
+summary: Set of GVL instrumentation tools
+homepage: https://github.com/Shopify/gvltools
+license: mit
 licenses:
 - sources: LICENSE.txt
   text: |
     The MIT License (MIT)
 
-    Copyright (c) 2021 GitLab
-
-    The original author of this library is [Jeanine Adkisson](http://jneen.net),
-    and copyright is held by GitLab.
+    Copyright (c) 2022 Shopify
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal

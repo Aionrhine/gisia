@@ -1,12 +1,12 @@
 ---
-name: pg
-version: 1.6.3
+name: openssl
+version: 3.3.2
 type: bundler
-summary: Pg is the Ruby interface to the PostgreSQL RDBMS
-homepage: https://github.com/ged/ruby-pg
+summary: SSL/TLS and general-purpose cryptography for Ruby
+homepage: https://github.com/ruby/openssl
 license: other
 licenses:
-- sources: LICENSE
+- sources: COPYING
   text: "Ruby is copyrighted free software by Yukihiro Matsumoto <matz@netlab.jp>.\nYou
     can redistribute it and/or modify it under either the terms of the\n2-clause BSDL
     (see the file BSDL), or the conditions below:\n\n  1. You may make and give away
@@ -32,9 +32,9 @@ licenses:
     commercial).  But some files in the distribution\n     are not written by the
     author, so that they are not under these terms.\n\n     For the list of those
     files and their copying conditions, see the\n     file LEGAL.\n\n  5. The scripts
-    and library files supplied as input to or produced as \n     output from the software
+    and library files supplied as input to or produced as\n     output from the software
     do not automatically fall under the\n     copyright of the software, but belong
-    to whomever generated them, \n     and may be sold commercially, and may be aggregated
+    to whomever generated them,\n     and may be sold commercially, and may be aggregated
     with this\n     software.\n\n  6. THIS SOFTWARE IS PROVIDED \"AS IS\" AND WITHOUT
     ANY EXPRESS OR\n     IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED\n
     \    WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR\n     PURPOSE.\n"

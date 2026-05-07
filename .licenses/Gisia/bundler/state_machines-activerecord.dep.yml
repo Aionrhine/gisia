@@ -1,6 +1,6 @@
 ---
 name: state_machines-activerecord
-version: 0.9.0
+version: 0.100.0
 type: bundler
 summary: State machines Active Record Integration
 homepage: https://github.com/state-machines/state_machines-activerecord/
@@ -9,7 +9,7 @@ licenses:
 - sources: LICENSE.txt
   text: |
     Copyright (c) 2006-2012 Aaron Pfeifer
-    Copyright (c) 2014-2023 Abdelkader Boudih
+    Copyright (c) 2014-2025 Abdelkader Boudih
 
     MIT License
 

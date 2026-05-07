@@ -1,6 +1,6 @@
 ---
 name: gitaly
-version: 18.2.1
+version: 18.10.5
 type: bundler
 summary: Auto-generated gRPC client for gitaly
 homepage: https://gitlab.com/gitlab-org/gitaly

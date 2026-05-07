@@ -1,6 +1,6 @@
 ---
 name: state_machines
-version: 0.6.0
+version: 0.101.0
 type: bundler
 summary: State machines for attributes
 homepage: https://github.com/state-machines/state_machines
