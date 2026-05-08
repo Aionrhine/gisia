@@ -638,6 +638,13 @@ class Project < ApplicationRecord
     end
   end
 
+  def self_deletion_in_progress?
+    false
+  end
+
+  def marked_for_deletion_at
+  end
+
   private
 
   def runners_token_prefix
