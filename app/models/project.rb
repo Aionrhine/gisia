@@ -645,6 +645,11 @@ class Project < ApplicationRecord
   def marked_for_deletion_at
   end
 
+  # Todo,
+  def default_pipeline_lock
+    :unlocked
+  end
+
   private
 
   def runners_token_prefix

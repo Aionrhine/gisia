@@ -27,6 +27,9 @@ module Ci
     include Ci::Pipelines::HasVariables
 
     attr_accessor :config_metadata, :partition_id
+    # Not supported
+    attr_accessor :external_pull_request
+
 
     DEFAULT_CONFIG_PATH = '.gitlab-ci.yml'
     COUNT_FAILED_JOBS_LIMIT = 101
