@@ -789,6 +789,44 @@ CREATE TABLE public.ci_pipeline_metadata (
 
 
 --
+-- Name: ci_pipeline_schedules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ci_pipeline_schedules (
+    id bigint NOT NULL,
+    description character varying,
+    ref character varying,
+    cron character varying,
+    cron_timezone character varying,
+    next_run_at timestamp(6) without time zone,
+    project_id bigint NOT NULL,
+    owner_id bigint,
+    active boolean DEFAULT true,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ci_pipeline_schedules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ci_pipeline_schedules_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ci_pipeline_schedules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ci_pipeline_schedules_id_seq OWNED BY public.ci_pipeline_schedules.id;
+
+
+--
 -- Name: ci_pipeline_variables; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3230,6 +3268,13 @@ ALTER TABLE ONLY public.ci_pipeline_messages ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: ci_pipeline_schedules id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_pipeline_schedules ALTER COLUMN id SET DEFAULT nextval('public.ci_pipeline_schedules_id_seq'::regclass);
+
+
+--
 -- Name: ci_pipeline_variables id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3738,6 +3783,14 @@ ALTER TABLE ONLY public.ci_pipeline_messages
 
 ALTER TABLE ONLY public.ci_pipeline_metadata
     ADD CONSTRAINT ci_pipeline_metadata_pkey PRIMARY KEY (pipeline_id);
+
+
+--
+-- Name: ci_pipeline_schedules ci_pipeline_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_pipeline_schedules
+    ADD CONSTRAINT ci_pipeline_schedules_pkey PRIMARY KEY (id);
 
 
 --
@@ -4928,6 +4981,27 @@ CREATE INDEX index_ci_pipeline_messages_on_project_id ON public.ci_pipeline_mess
 --
 
 CREATE INDEX index_ci_pipeline_metadata_on_project_id ON public.ci_pipeline_metadata USING btree (project_id);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_next_run_at_and_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_next_run_at_and_active ON public.ci_pipeline_schedules USING btree (next_run_at, active);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_owner_id ON public.ci_pipeline_schedules USING btree (owner_id);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_project_id ON public.ci_pipeline_schedules USING btree (project_id);
 
 
 --
@@ -6805,6 +6879,7 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508065116'),
 ('20260507152428'),
 ('20260507152427'),
 ('20260507152426'),
