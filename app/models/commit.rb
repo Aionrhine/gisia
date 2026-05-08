@@ -10,6 +10,8 @@
 # ======================================================
 
 class Commit
+  include Commits::Signaturable
+
   attr_accessor :raw
   attr_reader :container
 
