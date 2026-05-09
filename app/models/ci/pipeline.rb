@@ -15,7 +15,6 @@ module Ci
     include Ci::HasStatus
     include Ci::HasCompletionReason
     include AfterCommitQueue
-    include Gitlab::OptimisticLocking
 
     include AtomicInternalId
     include Ci::HasRef
@@ -28,6 +27,9 @@ module Ci
     include Ci::Pipelines::HasVariables
 
     attr_accessor :config_metadata, :partition_id
+    # Not supported
+    attr_accessor :external_pull_request
+
 
     DEFAULT_CONFIG_PATH = '.gitlab-ci.yml'
     COUNT_FAILED_JOBS_LIMIT = 101
@@ -49,6 +51,7 @@ module Ci
     belongs_to :ci_ref, class_name: 'Ci::Ref', foreign_key: :ci_ref_id, inverse_of: :pipelines, optional: true
 
     has_many :statuses, class_name: 'CommitStatus', foreign_key: :commit_id, inverse_of: :pipeline
+    has_many :cancelable_statuses, -> { cancelable }, foreign_key: :commit_id, class_name: 'CommitStatus', inverse_of: :pipeline
     has_many :stages, inverse_of: :pipeline
     has_many :bridges, class_name: 'Ci::Bridge', foreign_key: :commit_id, inverse_of: :pipeline
     has_many :builds, inverse_of: :pipeline
@@ -256,6 +259,57 @@ module Ci
       end
     end
 
+    def ci_config_ref_uri
+      url = File.join(Settings.build_server_fqdn, project.full_path, '//', project.ci_config_path_or_default)
+      "#{url}@#{source_ref_path}"
+    end
+
+    def git_author_name
+      strong_memoize(:git_author_name) { commit.try(:author_name) }
+    end
+
+    def git_author_email
+      strong_memoize(:git_author_email) { commit.try(:author_email) }
+    end
+
+    def git_author_full_text
+      strong_memoize(:git_author_full_text) { commit.try(:author_full_text) }
+    end
+
+    def git_author_login
+      strong_memoize(:git_author_login) do
+        email = commit.try(:author_email)
+        next unless email
+
+        user = User.find_by_any_email(email, confirmed: true)
+        next unless user
+        next if user.private_profile?
+        next unless user.public_email.present? && user.public_email.casecmp?(email)
+
+        user.username
+      end
+    end
+
+    def git_commit_message
+      strong_memoize(:git_commit_message) { commit.try(:message) }
+    end
+
+    def git_commit_title
+      strong_memoize(:git_commit_title) { commit.try(:title) }
+    end
+
+    def git_commit_full_title
+      strong_memoize(:git_commit_full_title) { commit.try(:full_title) }
+    end
+
+    def git_commit_description
+      strong_memoize(:git_commit_description) { commit.try(:description) }
+    end
+
+    def git_commit_timestamp
+      strong_memoize(:git_commit_timestamp) { commit.try(:timestamp) }
+    end
+
     def source_ref
       if merge_request?
         merge_request.source_branch
@@ -337,7 +391,7 @@ module Ci
 
     # rubocop: disable Metrics/CyclomaticComplexity -- breaking apart hurts readability
     def set_status(new_status)
-      retry_optimistic_lock(self, name: 'ci_pipeline_set_status') do
+      Gitlab::OptimisticLocking.retry_lock(self, name: 'ci_pipeline_set_status') do
         case new_status
         when 'created' then nil
         when 'waiting_for_resource' then request_resource
@@ -368,6 +422,18 @@ module Ci
 
     def self_and_downstreams
       object_hierarchy.base_and_descendants
+    end
+
+    def self_and_project_descendants
+      object_hierarchy(project_condition: :same).base_and_descendants
+    end
+
+    def all_child_pipelines
+      object_hierarchy(project_condition: :same).descendants
+    end
+
+    def bridges_in_self_and_project_descendants
+      Ci::Bridge.latest.where(pipeline: self_and_project_descendants)
     end
 
     def self_and_upstreams

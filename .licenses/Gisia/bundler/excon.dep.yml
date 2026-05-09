@@ -1,6 +1,6 @@
 ---
 name: excon
-version: 0.112.0
+version: 1.4.2
 type: bundler
 summary: speed, persistence, http(s)
 homepage: https://github.com/excon/excon

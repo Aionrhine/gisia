@@ -1,6 +1,6 @@
 ---
 name: state_machines-activemodel
-version: 0.9.0
+version: 0.102.0
 type: bundler
 summary: ActiveModel integration for State Machines
 homepage: https://github.com/state-machines/state_machines-activemodel

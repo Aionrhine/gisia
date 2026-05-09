@@ -1,6 +1,6 @@
 ---
 name: rake-compiler-dock
-version: 1.9.1
+version: 1.12.0
 type: bundler
 summary: Easy to use and reliable cross compiler environment for building Windows
   and Linux binary gems.

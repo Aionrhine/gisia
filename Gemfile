@@ -87,7 +87,7 @@ gem 'gitlab-net-dns', '~> 0.15.0'
 gem 'gitlab-chronic', '~> 0.10.5'
 gem 'gitlab_chronic_duration', '~> 0.12'
 
-gem 'google-protobuf', '~> 3.25', '>= 3.25.3'
+gem 'google-protobuf', '~> 4.34', '>= 4.34.1'
 gem 'grpc', '= 1.80.0'
 
 gem 'charlock_holmes', '~> 0.7.9'
@@ -150,6 +150,10 @@ gem 'gitlab-fog-azure-rm', '~> 2.4.0', require: 'fog/azurerm'
 gem 'rubyzip', '~> 2.4.0', require: 'zip'
 
 gem 'apollo_upload_server', '~> 2.1.6'
+
+# dummy
+gem "gvltools", "~> 0.4.0"
+gem 'circuitbox', '2.0.0'
 
 # Events
 gem 'wisper', '~> 3.0'

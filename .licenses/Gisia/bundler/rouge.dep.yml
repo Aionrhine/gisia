@@ -1,6 +1,6 @@
 ---
 name: rouge
-version: 4.6.0
+version: 4.7.0
 type: bundler
 summary: A pure-ruby colorizer based on pygments
 homepage: http://rouge.jneen.net/

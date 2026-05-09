@@ -16,12 +16,12 @@ module Gitlab
               .pipelines_created_counter
               .increment(source: pipeline.source, partition_id: pipeline.partition_id)
 
-            ::Ci::PipelineCreationMetricsWorker.perform_async(
-              @pipeline.id,
-              inputs_count,
-              collect_template_names,
-              collect_keyword_usage
-            )
+            # ::Ci::PipelineCreationMetricsWorker.perform_async(
+            #   @pipeline.id,
+            #   inputs_count,
+            #   collect_template_names,
+            #   collect_keyword_usage
+            # )
           end
 
           def break?

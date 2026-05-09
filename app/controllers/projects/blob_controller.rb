@@ -23,8 +23,7 @@ class Projects::BlobController < Projects::ApplicationController
 
     return unless commit
 
-    blob_raw = @repository.blob_at(@ref, @path)
-    @blob = Blob.decorate(blob_raw, @project)
+    @blob = @repository.blob_at(@ref, @path)
 
     return head :not_found unless @blob
   end
@@ -35,7 +34,7 @@ class Projects::BlobController < Projects::ApplicationController
 
   private
 
-  def ref_params
+  def ref_extractor_params
     { id: params[:id]}
   end
 end

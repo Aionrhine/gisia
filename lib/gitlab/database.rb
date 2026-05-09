@@ -102,7 +102,9 @@ module Gitlab
       @database_base_models ||=
         all_database_connections
           .transform_values(&:connection_class)
-          .compact.with_indifferent_access.freeze
+          .compact
+          .reject { |_, c| [SolidCache::Record, SolidQueue::Record, SolidCable::Record].include?(c) }
+          .with_indifferent_access.freeze
     end
 
     # This returns a list of databases that contains all the gitlab_shared schema

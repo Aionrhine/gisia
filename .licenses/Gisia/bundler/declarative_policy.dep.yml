@@ -1,9 +1,9 @@
 ---
 name: declarative_policy
-version: 1.1.0
+version: 2.1.0
 type: bundler
 summary: An authorization library with a focus on declarative policy definitions.
-homepage: https://gitlab.com/gitlab-org/declarative-policy
+homepage: https://gitlab.com/gitlab-org/ruby/gems/declarative-policy
 license: other
 licenses:
 - sources: LICENSE.txt

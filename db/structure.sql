@@ -122,7 +122,9 @@ CREATE TABLE public.application_settings (
     encrypted_external_pipeline_validation_service_token_iv text,
     password_authentication_enabled_for_git boolean DEFAULT true NOT NULL,
     password_authentication_enabled_for_web boolean,
-    commit_email_hostname character varying
+    commit_email_hostname character varying,
+    can_create_organization boolean DEFAULT false NOT NULL,
+    pipeline_limit_per_user integer DEFAULT 0 NOT NULL
 );
 
 
@@ -449,14 +451,16 @@ CREATE TABLE public.ci_builds (
     processed boolean DEFAULT false,
     auto_canceled_by_id bigint,
     erased_by_id bigint,
-    trigger_request_id bigint,
     execution_config_id bigint,
     description character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     lock_version integer DEFAULT 0,
     type integer DEFAULT 0 NOT NULL,
-    exit_code integer
+    exit_code integer,
+    timeout integer,
+    timeout_source integer,
+    scoped_user_id bigint
 );
 
 
@@ -667,6 +671,71 @@ ALTER SEQUENCE public.ci_job_artifacts_id_seq OWNED BY public.ci_job_artifacts.i
 
 
 --
+-- Name: ci_job_definition_instances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ci_job_definition_instances (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    job_id bigint NOT NULL,
+    job_definition_id bigint NOT NULL
+);
+
+
+--
+-- Name: ci_job_definition_instances_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ci_job_definition_instances_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ci_job_definition_instances_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ci_job_definition_instances_id_seq OWNED BY public.ci_job_definition_instances.id;
+
+
+--
+-- Name: ci_job_definitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ci_job_definitions (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    checksum text NOT NULL,
+    interruptible boolean,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ci_job_definitions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ci_job_definitions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ci_job_definitions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ci_job_definitions_id_seq OWNED BY public.ci_job_definitions.id;
+
+
+--
 -- Name: ci_job_variables; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -785,6 +854,44 @@ CREATE TABLE public.ci_pipeline_metadata (
     auto_cancel_on_new_commit integer DEFAULT 0 NOT NULL,
     auto_cancel_on_job_failure integer DEFAULT 0 NOT NULL
 );
+
+
+--
+-- Name: ci_pipeline_schedules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ci_pipeline_schedules (
+    id bigint NOT NULL,
+    description character varying,
+    ref character varying,
+    cron character varying,
+    cron_timezone character varying,
+    next_run_at timestamp(6) without time zone,
+    project_id bigint NOT NULL,
+    owner_id bigint,
+    active boolean DEFAULT true,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ci_pipeline_schedules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ci_pipeline_schedules_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ci_pipeline_schedules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ci_pipeline_schedules_id_seq OWNED BY public.ci_pipeline_schedules.id;
 
 
 --
@@ -957,7 +1064,6 @@ CREATE SEQUENCE public.ci_runner_machines_id_seq
 CREATE TABLE public.ci_runner_machines (
     id bigint DEFAULT nextval('public.ci_runner_machines_id_seq'::regclass) NOT NULL,
     runner_id bigint NOT NULL,
-    sharding_key_id bigint,
     contacted_at timestamp(6) without time zone,
     creation_state integer DEFAULT 0 NOT NULL,
     executor_type integer,
@@ -983,7 +1089,6 @@ CREATE TABLE public.ci_runner_taggings (
     id bigint NOT NULL,
     tag_id bigint NOT NULL,
     runner_id bigint NOT NULL,
-    sharding_key_id bigint,
     runner_type integer NOT NULL
 );
 
@@ -1036,12 +1141,10 @@ CREATE TABLE public.ci_runners (
     locked boolean DEFAULT false NOT NULL,
     name text,
     token_encrypted text,
-    token text,
     description text,
     maintainer_note text,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    sharding_key_id bigint
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1173,12 +1276,9 @@ ALTER SEQUENCE public.ci_stages_id_seq OWNED BY public.ci_stages.id;
 
 CREATE TABLE public.ci_triggers (
     id bigint NOT NULL,
-    token character varying NOT NULL,
     project_id bigint NOT NULL,
     owner_id bigint NOT NULL,
     description character varying,
-    encrypted_token bytea,
-    encrypted_token_iv bytea,
     expires_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
@@ -1994,7 +2094,8 @@ CREATE TABLE public.namespace_descendants (
     outdated_at timestamp with time zone,
     calculated_at timestamp with time zone,
     all_active_project_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL,
-    all_unarchived_project_ids bigint[] DEFAULT '{}'::bigint[]
+    all_unarchived_project_ids bigint[] DEFAULT '{}'::bigint[],
+    self_and_descendant_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL
 );
 
 
@@ -2265,6 +2366,40 @@ CREATE SEQUENCE public.oauth_applications_id_seq
 --
 
 ALTER SEQUENCE public.oauth_applications_id_seq OWNED BY public.oauth_applications.id;
+
+
+--
+-- Name: organizations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organizations (
+    id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    path text NOT NULL,
+    visibility_level smallint DEFAULT 0 NOT NULL,
+    state smallint DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.organizations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
 
 
 --
@@ -3180,6 +3315,20 @@ ALTER TABLE ONLY public.ci_job_artifacts ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: ci_job_definition_instances id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_job_definition_instances ALTER COLUMN id SET DEFAULT nextval('public.ci_job_definition_instances_id_seq'::regclass);
+
+
+--
+-- Name: ci_job_definitions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_job_definitions ALTER COLUMN id SET DEFAULT nextval('public.ci_job_definitions_id_seq'::regclass);
+
+
+--
 -- Name: ci_job_variables id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3198,6 +3347,13 @@ ALTER TABLE ONLY public.ci_pending_builds ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.ci_pipeline_messages ALTER COLUMN id SET DEFAULT nextval('public.ci_pipeline_messages_id_seq'::regclass);
+
+
+--
+-- Name: ci_pipeline_schedules id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_pipeline_schedules ALTER COLUMN id SET DEFAULT nextval('public.ci_pipeline_schedules_id_seq'::regclass);
 
 
 --
@@ -3415,6 +3571,13 @@ ALTER TABLE ONLY public.oauth_access_tokens ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.oauth_applications ALTER COLUMN id SET DEFAULT nextval('public.oauth_applications_id_seq'::regclass);
+
+
+--
+-- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('public.organizations_id_seq'::regclass);
 
 
 --
@@ -3673,6 +3836,22 @@ ALTER TABLE ONLY public.ci_job_artifacts
 
 
 --
+-- Name: ci_job_definition_instances ci_job_definition_instances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_job_definition_instances
+    ADD CONSTRAINT ci_job_definition_instances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ci_job_definitions ci_job_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_job_definitions
+    ADD CONSTRAINT ci_job_definitions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ci_job_variables ci_job_variables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3702,6 +3881,14 @@ ALTER TABLE ONLY public.ci_pipeline_messages
 
 ALTER TABLE ONLY public.ci_pipeline_metadata
     ADD CONSTRAINT ci_pipeline_metadata_pkey PRIMARY KEY (pipeline_id);
+
+
+--
+-- Name: ci_pipeline_schedules ci_pipeline_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ci_pipeline_schedules
+    ADD CONSTRAINT ci_pipeline_schedules_pkey PRIMARY KEY (id);
 
 
 --
@@ -4054,6 +4241,14 @@ ALTER TABLE ONLY public.oauth_access_tokens
 
 ALTER TABLE ONLY public.oauth_applications
     ADD CONSTRAINT oauth_applications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
 
 
 --
@@ -4810,6 +5005,34 @@ CREATE INDEX index_ci_job_artifacts_on_project_id ON public.ci_job_artifacts USI
 
 
 --
+-- Name: index_ci_job_definition_instances_on_job_definition_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_job_definition_instances_on_job_definition_id ON public.ci_job_definition_instances USING btree (job_definition_id);
+
+
+--
+-- Name: index_ci_job_definition_instances_on_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ci_job_definition_instances_on_job_id ON public.ci_job_definition_instances USING btree (job_id);
+
+
+--
+-- Name: index_ci_job_definitions_on_checksum; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_job_definitions_on_checksum ON public.ci_job_definitions USING btree (checksum);
+
+
+--
+-- Name: index_ci_job_definitions_on_project_id_and_checksum; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ci_job_definitions_on_project_id_and_checksum ON public.ci_job_definitions USING btree (project_id, checksum);
+
+
+--
 -- Name: index_ci_job_variables_on_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4884,6 +5107,27 @@ CREATE INDEX index_ci_pipeline_messages_on_project_id ON public.ci_pipeline_mess
 --
 
 CREATE INDEX index_ci_pipeline_metadata_on_project_id ON public.ci_pipeline_metadata USING btree (project_id);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_next_run_at_and_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_next_run_at_and_active ON public.ci_pipeline_schedules USING btree (next_run_at, active);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_owner_id ON public.ci_pipeline_schedules USING btree (owner_id);
+
+
+--
+-- Name: index_ci_pipeline_schedules_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ci_pipeline_schedules_on_project_id ON public.ci_pipeline_schedules USING btree (project_id);
 
 
 --
@@ -5034,13 +5278,6 @@ CREATE INDEX index_ci_runner_machines_on_ip_address ON public.ci_runner_machines
 
 
 --
--- Name: index_ci_runner_machines_on_sharding_key_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_ci_runner_machines_on_sharding_key_id ON public.ci_runner_machines USING btree (sharding_key_id);
-
-
---
 -- Name: index_ci_runner_machines_on_version; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5052,13 +5289,6 @@ CREATE INDEX index_ci_runner_machines_on_version ON public.ci_runner_machines US
 --
 
 CREATE INDEX index_ci_runner_taggings_on_runner_id_and_runner_type ON public.ci_runner_taggings USING btree (runner_id, runner_type);
-
-
---
--- Name: index_ci_runner_taggings_on_sharding_key_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_ci_runner_taggings_on_sharding_key_id ON public.ci_runner_taggings USING btree (sharding_key_id);
 
 
 --
@@ -5101,20 +5331,6 @@ CREATE INDEX index_ci_runners_on_locked ON public.ci_runners USING btree (locked
 --
 
 CREATE INDEX index_ci_runners_on_runner_type ON public.ci_runners USING btree (runner_type);
-
-
---
--- Name: index_ci_runners_on_sharding_key_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_ci_runners_on_sharding_key_id ON public.ci_runners USING btree (sharding_key_id);
-
-
---
--- Name: index_ci_runners_on_token_and_runner_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_ci_runners_on_token_and_runner_type ON public.ci_runners USING btree (token, runner_type) WHERE (token IS NOT NULL);
 
 
 --
@@ -5202,13 +5418,6 @@ CREATE INDEX index_ci_stages_on_project_id ON public.ci_stages USING btree (proj
 
 
 --
--- Name: index_ci_triggers_on_encrypted_token; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_ci_triggers_on_encrypted_token ON public.ci_triggers USING btree (encrypted_token);
-
-
---
 -- Name: index_ci_triggers_on_owner_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5220,13 +5429,6 @@ CREATE INDEX index_ci_triggers_on_owner_id ON public.ci_triggers USING btree (ow
 --
 
 CREATE INDEX index_ci_triggers_on_project_id_and_id ON public.ci_triggers USING btree (project_id, id);
-
-
---
--- Name: index_ci_triggers_on_token; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_ci_triggers_on_token ON public.ci_triggers USING btree (token);
 
 
 --
@@ -5794,6 +5996,34 @@ CREATE INDEX index_oauth_applications_on_owner_id_and_owner_type ON public.oauth
 --
 
 CREATE UNIQUE INDEX index_oauth_applications_on_uid ON public.oauth_applications USING btree (uid);
+
+
+--
+-- Name: index_organizations_on_lower_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_organizations_on_lower_path ON public.organizations USING btree (lower(path));
+
+
+--
+-- Name: index_organizations_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_name ON public.organizations USING btree (name);
+
+
+--
+-- Name: index_organizations_on_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_path ON public.organizations USING btree (path);
+
+
+--
+-- Name: index_organizations_on_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_organizations_on_state ON public.organizations USING btree (state);
 
 
 --
@@ -6775,6 +7005,21 @@ ALTER TABLE ONLY public.label_links
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260509000004'),
+('20260509000003'),
+('20260509000002'),
+('20260509000001'),
+('20260508073925'),
+('20260508065116'),
+('20260507152428'),
+('20260507152427'),
+('20260507152426'),
+('20260507152425'),
+('20260507063936'),
+('20260507063933'),
+('20260507063431'),
+('20260507063429'),
+('20260507063426'),
 ('20260504104200'),
 ('20260501134632'),
 ('20260501134333'),

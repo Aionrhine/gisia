@@ -149,8 +149,12 @@ class Project < ApplicationRecord
     false
   end
 
+  def organization_id
+    Organizations::Organization::DEFAULT_ORGANIZATION_ID
+  end
+
   def organization
-    nil
+    Organizations::Organization.default_organization
   end
 
   def pages_enabled?
@@ -632,6 +636,18 @@ class Project < ApplicationRecord
     strong_memoize(:active_runners) do
       all_available_runners.active
     end
+  end
+
+  def self_deletion_in_progress?
+    false
+  end
+
+  def marked_for_deletion_at
+  end
+
+  # Todo,
+  def default_pipeline_lock
+    :unlocked
   end
 
   private

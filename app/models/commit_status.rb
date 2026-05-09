@@ -10,6 +10,7 @@
 # ======================================================
 
 class CommitStatus < Ci::ApplicationRecord
+  include EachBatch
   include Ci::Partitionable
   include Ci::HasStatus
   include Ci::HasCommitBuildStatus

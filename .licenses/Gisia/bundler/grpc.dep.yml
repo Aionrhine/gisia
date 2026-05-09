@@ -1,6 +1,6 @@
 ---
 name: grpc
-version: 1.74.0
+version: 1.80.0
 type: bundler
 summary: GRPC system in Ruby
 homepage: https://github.com/google/grpc/tree/master/src/ruby
