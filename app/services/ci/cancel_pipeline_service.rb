@@ -24,11 +24,13 @@ module Ci
       current_user:,
       cascade_to_children: true,
       auto_canceled_by_pipeline: nil,
+      execute_async: true,
       safe_cancellation: false)
       @pipeline = pipeline
       @current_user = current_user
       @cascade_to_children = cascade_to_children
       @auto_canceled_by_pipeline = auto_canceled_by_pipeline
+      @execute_async = execute_async
       @safe_cancellation = safe_cancellation
     end
 
@@ -54,9 +56,11 @@ module Ci
       if @safe_cancellation
         # Only build and bridge (trigger) jobs can be interruptible.
         # We do not cancel GenericCommitStatuses because they can't have the `interruptible` attribute.
-        cancel_jobs(pipeline.all_processable_jobs.cancelable.interruptible)
+        jobs = pipeline.processables.cancelable.with_interruptible_true
+
+        cancel_jobs(jobs)
       else
-        cancel_jobs(pipeline.statuses.cancelable)
+        cancel_jobs(pipeline.cancelable_statuses)
       end
 
       cancel_children if cascade_to_children?
@@ -75,6 +79,7 @@ module Ci
         pipeline_id: pipeline.id,
         auto_canceled_by_pipeline_id: @auto_canceled_by_pipeline&.id,
         cascade_to_children: cascade_to_children?,
+        execute_async: execute_async?,
         **Gitlab::ApplicationContext.current
       )
     end
@@ -82,24 +87,42 @@ module Ci
     def update_auto_canceled_pipeline_attributes
       return unless auto_canceled_by_pipeline
 
-      pipeline.update_columns(auto_canceled_by_id: auto_canceled_by_pipeline.id)
+      pipeline.update_columns(
+        auto_canceled_by_id: auto_canceled_by_pipeline.id,
+      )
     end
 
     def cascade_to_children?
       @cascade_to_children
     end
 
-    def cancel_jobs(jobs)
-      retries = 3
-      retry_lock(jobs, retries, name: 'ci_pipeline_cancel_running') do |jobs_to_cancel|
-        jobs_to_cancel.find_in_batches do |batch|
-          CommitStatus.id_in(batch).each { |job| cancel_job(job) }
+    def execute_async?
+      @execute_async
+    end
+
+    def cancel_jobs(cancelable_jobs)
+      cancelable_jobs.each_batch(of: 50) do |batch_relation|
+        ::Ci::Preloaders::CommitStatusPreloader
+          .new(batch_relation).execute(build_preloads)
+
+        batch_relation.each do |job|
+          Gitlab::OptimisticLocking.retry_lock(job,
+            name: 'ci_pipeline_cancel_running') do |subject|
+            cancel_job(subject)
+          end
         end
       end
     end
 
+    def build_preloads
+      [:project, :pipeline, :deployment, :taggings]
+    end
+
     def cancel_job(job)
-      job.auto_canceled_by_id = @auto_canceled_by_pipeline.id if @auto_canceled_by_pipeline
+      if @auto_canceled_by_pipeline
+        job.auto_canceled_by_id = @auto_canceled_by_pipeline.id
+      end
+
       job.cancel
     end
 
@@ -116,15 +139,30 @@ module Ci
     # In the future, when "safe cancellation" is implemented as a regular cancellation feature,
     # we need to handle this case.
     def cancel_children
-      pipeline.sourced_pipelines.each do |sourced|
-        self.class.new(
-          pipeline: sourced.pipeline.reset,
-          current_user: nil,
-          cascade_to_children: false,
-          auto_canceled_by_pipeline: @auto_canceled_by_pipeline
-        ).force_execute
+      cancel_jobs(pipeline.bridges_in_self_and_project_descendants.cancelable)
+
+      # For parent child-pipelines only (not multi-project)
+      pipeline.all_child_pipelines.each do |child_pipeline|
+        if execute_async?
+          ::Ci::CancelPipelineJob.perform_later(
+            child_pipeline.id,
+            @auto_canceled_by_pipeline&.id
+          )
+        else
+          # cascade_to_children is false because we iterate through children
+          # we also cancel bridges prior to prevent more children
+          self.class.new(
+            pipeline: child_pipeline.reset,
+            current_user: nil,
+            cascade_to_children: false,
+            execute_async: execute_async?,
+            auto_canceled_by_pipeline: @auto_canceled_by_pipeline
+          ).force_execute
+        end
       end
     end
   end
 end
+
+Ci::CancelPipelineService.prepend_mod
 

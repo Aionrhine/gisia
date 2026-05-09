@@ -15,7 +15,6 @@ module Ci
     include ::FastDestroyAll
     include ::Checksummable
     include ::Gitlab::ExclusiveLeaseHelpers
-    include ::Gitlab::OptimisticLocking
 
     before_validation :set_project_id, on: :create
     belongs_to :build,

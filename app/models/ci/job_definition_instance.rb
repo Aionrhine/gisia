@@ -11,12 +11,10 @@
 
 module Ci
   class JobDefinitionInstance < Ci::ApplicationRecord
-    self.table_name = :p_ci_job_definition_instances
+    self.table_name = :ci_job_definition_instances
     self.primary_key = :job_id
 
     attr_accessor :partition_id
-
-    query_constraints :job_id
 
     belongs_to :project
 

@@ -17,6 +17,7 @@ module Ci
     include FromUnion
     include Ci::Metadatable
     include Ci::Builds::Processable
+    include Ci::Builds::HasRedisState
     include Ci::Retryable
 
     extend ::Gitlab::Utils::Override
@@ -39,6 +40,15 @@ module Ci
     has_one :job_definition,
       class_name: 'Ci::JobDefinition',
       through: :job_definition_instance
+
+    scope :with_interruptible_true, -> do
+      where_exists(
+        Ci::JobDefinitionInstance
+          .joins(:job_definition)
+          .scoped_job
+          .merge(Ci::JobDefinition.with_interruptible_true)
+      )
+    end
 
     scope :interruptible, -> do
       joins(:metadata).merge(Ci::BuildMetadata.with_interruptible)

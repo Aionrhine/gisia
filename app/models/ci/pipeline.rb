@@ -51,6 +51,7 @@ module Ci
     belongs_to :ci_ref, class_name: 'Ci::Ref', foreign_key: :ci_ref_id, inverse_of: :pipelines, optional: true
 
     has_many :statuses, class_name: 'CommitStatus', foreign_key: :commit_id, inverse_of: :pipeline
+    has_many :cancelable_statuses, -> { cancelable }, foreign_key: :commit_id, class_name: 'CommitStatus', inverse_of: :pipeline
     has_many :stages, inverse_of: :pipeline
     has_many :bridges, class_name: 'Ci::Bridge', foreign_key: :commit_id, inverse_of: :pipeline
     has_many :builds, inverse_of: :pipeline
@@ -390,7 +391,7 @@ module Ci
 
     # rubocop: disable Metrics/CyclomaticComplexity -- breaking apart hurts readability
     def set_status(new_status)
-      retry_optimistic_lock(self, name: 'ci_pipeline_set_status') do
+      Gitlab::OptimisticLocking.retry_lock(self, name: 'ci_pipeline_set_status') do
         case new_status
         when 'created' then nil
         when 'waiting_for_resource' then request_resource
@@ -421,6 +422,18 @@ module Ci
 
     def self_and_downstreams
       object_hierarchy.base_and_descendants
+    end
+
+    def self_and_project_descendants
+      object_hierarchy(project_condition: :same).base_and_descendants
+    end
+
+    def all_child_pipelines
+      object_hierarchy(project_condition: :same).descendants
+    end
+
+    def bridges_in_self_and_project_descendants
+      Ci::Bridge.latest.where(pipeline: self_and_project_descendants)
     end
 
     def self_and_upstreams

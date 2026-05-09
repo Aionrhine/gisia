@@ -51,17 +51,17 @@ module Ci
     scope :for_checksum, ->(checksum) { where(checksum: checksum) }
     scope :with_interruptible_true, -> { where(interruptible: true) }
 
-    ignore_column :updated_at, remove_after: '2025-12-22', remove_with: '18.8'
-
     def self.fabricate(config:, project_id:, partition_id:)
       sanitized_config = sanitize_config(config)
       config_with_defaults = apply_normalized_defaults!(sanitized_config.deep_dup)
+      now = Time.current
 
       new(
         project_id: project_id,
         config: sanitized_config.except(*NORMALIZED_DATA_COLUMNS),
         checksum: generate_checksum(config_with_defaults),
-        created_at: Time.current,
+        created_at: now,
+        updated_at: now,
         **config_with_defaults.slice(*NORMALIZED_DATA_COLUMNS)
       )
     end

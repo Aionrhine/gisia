@@ -23,7 +23,7 @@ module Gitlab
             find_or_insert_job_definitions.each do |job_definition|
               jobs_by_checksum[job_definition.checksum].each do |job|
                 job.build_job_definition_instance(
-                  job_definition: job_definition, partition_id: pipeline.partition_id, project: project
+                  job_definition: job_definition, project: project
                 )
               end
             end
